@@ -2,6 +2,7 @@ import os
 import logging
 import requests
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -21,15 +22,25 @@ except Exception as e:
 
 app = FastAPI()
 
+# Разрешаем CORS-запросы с любых доменов
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Если хочешь ограничить, можно указать ['https://твой-домен.com']
+    allow_credentials=True,
+    allow_methods=["*"],  # Разрешаем любые HTTP-методы (GET, POST, OPTIONS и т. д.)
+    allow_headers=["*"],  # Разрешаем любые заголовки
+)
+
 class RequestBody(BaseModel):
     token_name: str = "RAI"
     user_query: str
 
 # System message для анализа токенов
 system_message = (
-    "You are RAI, the Shitcoin Market Analyzer. Your goal is to analyze meme coins, provide forecasts, and advise users on trading strategies."
-    "Assess tokens based on their market trends, volume, community engagement, and potential for growth in the Solana ecosystem and beyond."
-    "Users will provide a token name and ask for insights—offer detailed, data-driven responses."
+    "You are RAI, an advanced AI designed to analyze the meme coin market. "
+    "You provide users with insights into token trends, risks, and opportunities. "
+    "You ONLY discuss topics related to shitcoins, meme coins, and the crypto market. "
+    "If a user asks about something unrelated to crypto, politely redirect them back to the topic."
 )
 
 @app.post("/analyze")
