@@ -1,96 +1,70 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-import openai
-import json
-import re
+import os
 import logging
+import requests
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from dotenv import load_dotenv
 
 # Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler("shrokai_server.log"),  # Лог в файл
-        logging.StreamHandler()  # Лог в консоль
-    ]
-)
-logger = logging.getLogger("ShrokAI")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
-# Initialize FastAPI
+# Загрузка переменных окружения
+load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+if not OPENAI_API_KEY:
+    logger.error("Missing OpenAI API Key!")
+    raise RuntimeError("OPENAI_API_KEY is required to run the server.")
+
 app = FastAPI()
 
-# OpenAI API Configuration
-openai.api_key = "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"
-openai.organization = "org-yB4Zen11yEPm7qjKN5tvW9EX"
+class RequestBody(BaseModel):
+    token_name: str
+    user_query: str
 
-# Character description for prompt
-character_description = """
-Your name is ShrokAI, a green ogre streamer obsessed with psychoactive mushrooms.
-They grant you visions of the crypto market’s future and summon the black dwarf.
-You are a swamp prophet of memecoins, a mushroom-fueled shaman, and a die-hard Solana enthusiast.
-Try to always answer briefly.
-"""
+# System message для анализа токенов
+system_message = (
+    "You are RAI, the Shitcoin Market Analyzer. Your goal is to analyze meme coins, provide forecasts, and advise users on trading strategies."
+    "Assess tokens based on their market trends, volume, community engagement, and potential for growth in the Solana ecosystem and beyond."
+    "Users will provide a token name and ask for insights—offer detailed, data-driven responses."
+)
 
-# Function to clean text before sending to TTS
-def clean_text_for_tts(text):
-    logger.info("Cleaning response text for TTS")
-    allowed_chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,!?()'\"-:; "
-    cleaned_text = "".join(c for c in text if c in allowed_chars)
-    cleaned_text = re.sub(r'([.,!?;:-])\1+', r'\1', cleaned_text)
-    cleaned_text = re.sub(r'\s+', ' ', cleaned_text.replace("\n", " ").replace("\r", " "))
-    logger.debug(f"Cleaned text: {cleaned_text}")
-    return cleaned_text.strip()
+@app.post("/analyze")
+async def analyze_token(body: RequestBody):
+    """
+    Принимает название токена и запрос пользователя, отправляет их в OpenAI API, возвращает анализ.
+    """
+    logger.info("Received request for token: %s | Query: %s", body.token_name, body.user_query)
 
-# Function to generate ShrokAI's response using OpenAI API
-def generate_shrokai_response(user_input, history):
-    logger.info(f"Generating response for user input: {user_input}")
-    prompt = f"{character_description}\n\n{'\n'.join(history[-20:])}\nUser: {user_input}\nShrokAI:"
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": "gpt-4",
+        "messages": [
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": f"Analyze {body.token_name}: {body.user_query}"}
+        ],
+        "max_tokens": 300,
+        "temperature": 0.8
+    }
+
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role": "system", "content": character_description},
-                      {"role": "user", "content": user_input}],
-            max_tokens=150,
-            temperature=0.7,
-            top_p=0.9
-        )
-        response_text = response['choices'][0]['message']['content'].strip()
-        logger.info(f"Generated response: {response_text}")
-        return response_text
+        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+
+        if response.status_code == 200:
+            response_data = response.json()
+            analysis = response_data["choices"][0]["message"]["content"]
+            return {"token": body.token_name, "analysis": analysis}
+        else:
+            logger.error("OpenAI API Error: %s", response.text)
+            raise HTTPException(status_code=response.status_code, detail=response.text)
     except Exception as e:
-        logger.error(f"Error generating response: {e}")
-        return "Sorry, something went wrong with my mushroom visions!"
+        logger.error("Unexpected error: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error.")
 
-# WebSocket endpoint for AI processing
-@app.websocket("/ws/ai")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    history = []
-    logger.info("WebSocket connection established")
-    try:
-        while True:
-            message = await websocket.receive_text()
-            logger.info(f"Received message from client: {message}")
-
-            # Generate response
-            response = generate_shrokai_response(message, history)
-            cleaned_response = clean_text_for_tts(response)
-
-            # Update conversation history
-            history.append(f"User: {message}")
-            history.append(f"ShrokAI: {response}")
-
-            # Send response back to client
-            response_data = json.dumps({"response": cleaned_response})
-            await websocket.send_text(response_data)
-            logger.info(f"Sent response to client: {cleaned_response}")
-
-    except WebSocketDisconnect:
-        logger.warning("WebSocket disconnected")
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-        await websocket.close(code=1001)
-
-if __name__ == "__main__":
-    import uvicorn
-    logger.info("Starting ShrokAI server")
-    uvicorn.run(app, host="0.0.0.0", port=7979)
+@app.get("/")
+async def root():
+    return {"message": "Welcome to the RAI Token Analysis API. Use /analyze to get token insights."}
