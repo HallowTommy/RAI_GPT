@@ -10,17 +10,19 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # Загрузка переменных окружения
-load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-if not OPENAI_API_KEY:
-    logger.error("Missing OpenAI API Key!")
-    raise RuntimeError("OPENAI_API_KEY is required to run the server.")
+try:
+    load_dotenv()
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    if not OPENAI_API_KEY:
+        raise ValueError("Missing OpenAI API Key!")
+except Exception as e:
+    logger.error("Ошибка при загрузке переменных окружения: %s", e)
+    raise RuntimeError("Ошибка загрузки конфигурации")
 
 app = FastAPI()
 
 class RequestBody(BaseModel):
-    token_name: str
+    token_name: str = "RAI"
     user_query: str
 
 # System message для анализа токенов
@@ -32,9 +34,7 @@ system_message = (
 
 @app.post("/analyze")
 async def analyze_token(body: RequestBody):
-    """
-    Принимает название токена и запрос пользователя, отправляет их в OpenAI API, возвращает анализ.
-    """
+    """ Анализирует токен и дает рекомендации. """
     logger.info("Received request for token: %s | Query: %s", body.token_name, body.user_query)
 
     headers = {
