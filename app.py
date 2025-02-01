@@ -41,7 +41,7 @@ RAI_CA = "0xYourRAITokenAddressHere"  # Replace with actual contract address
 system_message = (
     "You are RAI, an advanced AI specializing in meme coin market analysis. "
     "Your primary function is to analyze tokens when a user provides a contract address (CA). "
-    "If the user does not provide a CA, you can respond to general crypto questions but avoid unrelated topics. "
+    "If the user does not provide a CA, request it while maintaining a friendly conversation. "
     "Your responses should follow this structure:\n"
     "   token: [TOKEN NAME]\n"
     "   analysis: [SHORT ANALYSIS]\n"
@@ -62,7 +62,7 @@ def fetch_token_data(contract_address):
 
 @app.post("/analyze")
 async def analyze_token(body: RequestBody):
-    """Analyzes a token or responds to general crypto-related questions."""
+    """Analyzes a token or responds to general crypto-related messages."""
     user_query = body.user_query.strip()
     logger.info("Received query: %s", user_query)
 
@@ -81,12 +81,9 @@ async def analyze_token(body: RequestBody):
     words = user_query.split()
     contract_address = next((word for word in words if len(word) > 25), None)
 
-    # If no CA found, check if it's a general crypto question
+    # If no CA found, respond with a request for it while keeping the conversation going
     if not contract_address:
-        general_response = get_general_crypto_response(user_query)
-        if general_response:
-            return {"message": general_response}
-        return {"message": "Please provide the contract address (CA) for analysis."}
+        return {"message": f"Hello! I can analyze meme coins for you. Please provide the contract address (CA) of the token you'd like me to analyze."}
 
     # Fetch token data from DEXScreener
     token_data = fetch_token_data(contract_address)
@@ -109,18 +106,6 @@ async def analyze_token(body: RequestBody):
         "trend": trend,
         "recommendation": recommendation
     }
-
-def get_general_crypto_response(user_query):
-    """Handles general crypto-related questions when no CA is provided."""
-    if "market" in user_query.lower():
-        return "The meme coin market is highly volatile. Always DYOR before investing."
-    if "trend" in user_query.lower():
-        return "Meme coin trends change rapidly. Look at social media sentiment and trading volume."
-    if "investment" in user_query.lower():
-        return "Investing in meme coins carries high risk. Diversify your portfolio wisely."
-    if "best coin" in user_query.lower():
-        return "There is no 'best' coin, but some popular meme coins include DOGE, SHIB, and BONK."
-    return None
 
 @app.get("/")
 async def root():
