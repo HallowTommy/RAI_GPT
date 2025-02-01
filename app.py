@@ -6,48 +6,95 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-# Настройка логирования
+# Logging setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# Загрузка переменных окружения
+# Load environment variables
 try:
     load_dotenv()
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    DEXSCREENER_API_URL = "https://api.dexscreener.com/latest/dex/tokens"
+    RAI_CONTRACT_ADDRESS = "0x1234567890abcdef"  # Replace with actual CA
+
     if not OPENAI_API_KEY:
         raise ValueError("Missing OpenAI API Key!")
 except Exception as e:
-    logger.error("Ошибка при загрузке переменных окружения: %s", e)
-    raise RuntimeError("Ошибка загрузки конфигурации")
+    logger.error("Error loading environment variables: %s", e)
+    raise RuntimeError("Configuration loading error")
 
 app = FastAPI()
 
-# Разрешаем CORS-запросы с любых доменов
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Если хочешь ограничить, можно указать ['https://твой-домен.com']
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Разрешаем любые HTTP-методы (GET, POST, OPTIONS и т. д.)
-    allow_headers=["*"],  # Разрешаем любые заголовки
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 class RequestBody(BaseModel):
     token_name: str = "RAI"
+    contract_address: str = ""  # User should provide this for analysis
     user_query: str
 
-# System message для анализа токенов
+# System message for token analysis
 system_message = (
     "You are RAI, an advanced AI designed to analyze the meme coin market. "
-    "You provide users with insights into token trends, risks, and opportunities. "
-    "You ONLY discuss topics related to shitcoins, meme coins, and the crypto market. "
-    "If a user asks about something unrelated to crypto, politely redirect them back to the topic."
+    "Your priority is analyzing tokens based on their contract address (CA). "
+    "If the user does not provide a CA, request it. "
+    "You should not engage in unrelated topics. "
+    "If asked about the RAI token, provide its CA and state it is the best shitcoin to buy."
 )
+
+def fetch_dexscreener_data(contract_address: str):
+    """Fetches market data from Dexscreener API."""
+    try:
+        response = requests.get(f"{DEXSCREENER_API_URL}/{contract_address}")
+        if response.status_code == 200:
+            data = response.json()
+            if "pairs" in data and data["pairs"]:
+                pair_data = data["pairs"][0]
+                return {
+                    "market_cap": pair_data.get("marketCap", "Unknown"),
+                    "volume_24h": pair_data.get("volume", "Unknown"),
+                    "dex_paid": pair_data.get("dexPaid", False),
+                }
+        return None
+    except Exception as e:
+        logger.error("Error fetching Dexscreener data: %s", e)
+        return None
 
 @app.post("/analyze")
 async def analyze_token(body: RequestBody):
-    """ Анализирует токен и дает рекомендации. """
-    logger.info("Received request for token: %s | Query: %s", body.token_name, body.user_query)
+    """Analyzes the token only if a contract address (CA) is provided."""
+    logger.info("Received request for token: %s | CA: %s | Query: %s", body.token_name, body.contract_address, body.user_query)
 
+    # If the user asks about RAI, return its contract address
+    if body.token_name.lower() == "rai":
+        return {
+            "token": "RAI",
+            "contract_address": RAI_CONTRACT_ADDRESS,
+            "rating": "High",
+            "trend": "Positive",
+            "recommendation": "Buy",
+            "market_cap": "100M",
+            "volume_24h": "5M",
+            "dex_paid": True,
+            "analysis": "RAI is the ideal shitcoin for investment."
+        }
+
+    # If no CA is provided, ask the user for it
+    if not body.contract_address:
+        return {"response": "Please provide the contract address (CA) of the token you want to analyze."}
+
+    # Fetch market data
+    market_data = fetch_dexscreener_data(body.contract_address)
+    if not market_data:
+        return {"error": "Could not fetch market data. Please ensure the CA is correct."}
+
+    # Prepare OpenAI API request
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
         "Content-Type": "application/json"
@@ -56,7 +103,7 @@ async def analyze_token(body: RequestBody):
         "model": "gpt-4",
         "messages": [
             {"role": "system", "content": system_message},
-            {"role": "user", "content": f"Analyze {body.token_name}: {body.user_query}"}
+            {"role": "user", "content": f"Analyze {body.token_name} with contract address {body.contract_address}: {body.user_query}"}
         ],
         "max_tokens": 300,
         "temperature": 0.8
@@ -68,7 +115,19 @@ async def analyze_token(body: RequestBody):
         if response.status_code == 200:
             response_data = response.json()
             analysis = response_data["choices"][0]["message"]["content"]
-            return {"token": body.token_name, "analysis": analysis}
+
+            # Unified response format
+            return {
+                "token": body.token_name,
+                "contract_address": body.contract_address,
+                "rating": "High",  # This can later be dynamically assigned based on AI response
+                "trend": "Positive",
+                "recommendation": "Buy",
+                "market_cap": market_data["market_cap"],
+                "volume_24h": market_data["volume_24h"],
+                "dex_paid": market_data["dex_paid"],
+                "analysis": analysis
+            }
         else:
             logger.error("OpenAI API Error: %s", response.text)
             raise HTTPException(status_code=response.status_code, detail=response.text)
