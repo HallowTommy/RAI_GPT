@@ -35,8 +35,8 @@ app.add_middleware(
 )
 
 class RequestBody(BaseModel):
-    token_name: str = "RAI"
-    contract_address: str = ""  # User should provide this for analysis
+    token_name: str
+    contract_address: str = ""  # User must provide this for analysis
     user_query: str
 
 # System message for token analysis
@@ -71,8 +71,10 @@ async def analyze_token(body: RequestBody):
     """Analyzes the token only if a contract address (CA) is provided."""
     logger.info("Received request for token: %s | CA: %s | Query: %s", body.token_name, body.contract_address, body.user_query)
 
-    # If the user asks about RAI, return its contract address
-    if body.token_name.lower() == "rai":
+    token_name = body.token_name.strip().lower()
+
+    # If user asks about RAI, return its contract address
+    if "rai" in token_name:
         return {
             "token": "RAI",
             "contract_address": RAI_CONTRACT_ADDRESS,
@@ -87,7 +89,7 @@ async def analyze_token(body: RequestBody):
 
     # If no CA is provided, ask the user for it
     if not body.contract_address:
-        return {"response": "Please provide the contract address (CA) of the token you want to analyze."}
+        return {"response": f"Please provide the contract address (CA) for {body.token_name} to proceed with the analysis."}
 
     # Fetch market data
     market_data = fetch_dexscreener_data(body.contract_address)
