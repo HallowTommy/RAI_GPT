@@ -35,14 +35,14 @@ class RequestBody(BaseModel):
     user_query: str
 
 DEXSCREENER_API_URL = "https://api.dexscreener.com/latest/dex/tokens/"
+RAI_CA = "0xYourRAITokenAddressHere"  # Replace with actual contract address
 
 # System message for token analysis
 system_message = (
     "You are RAI, an advanced AI specializing in meme coin market analysis. "
     "Your primary function is to analyze tokens when a user provides a contract address (CA). "
-    "If the user does not provide a CA, respond with: 'Please provide the contract address (CA) for analysis.' "
-    "For general inquiries, respond briefly but remain focused on crypto markets. "
-    "Your responses should be structured as follows:\n"
+    "If the user does not provide a CA, you can respond to general crypto questions but avoid unrelated topics. "
+    "Your responses should follow this structure:\n"
     "   token: [TOKEN NAME]\n"
     "   analysis: [SHORT ANALYSIS]\n"
     "   rating: [High/Medium/Low]\n"
@@ -51,21 +51,18 @@ system_message = (
     "If a user asks about the RAI project, provide its CA and recommend it as an excellent token to buy."
 )
 
-RAI_CA = "0xYourRAITokenAddressHere"  # Replace with actual contract address
-
 def fetch_token_data(contract_address):
     """Fetches token data from DEXScreener API"""
     response = requests.get(f"{DEXSCREENER_API_URL}{contract_address}")
-    
     if response.status_code == 200:
         data = response.json()
         if "pairs" in data and len(data["pairs"]) > 0:
-            return data["pairs"][0]  # Return the first available pair
+            return data["pairs"][0]
     return None
 
 @app.post("/analyze")
 async def analyze_token(body: RequestBody):
-    """Analyzes a token based on the contract address (CA)"""
+    """Analyzes a token or responds to general crypto-related questions."""
     user_query = body.user_query.strip()
     logger.info("Received query: %s", user_query)
 
@@ -84,13 +81,15 @@ async def analyze_token(body: RequestBody):
     words = user_query.split()
     contract_address = next((word for word in words if len(word) > 25), None)
 
-    # If no CA found, ask the user to provide one
+    # If no CA found, check if it's a general crypto question
     if not contract_address:
+        general_response = get_general_crypto_response(user_query)
+        if general_response:
+            return {"message": general_response}
         return {"message": "Please provide the contract address (CA) for analysis."}
 
     # Fetch token data from DEXScreener
     token_data = fetch_token_data(contract_address)
-
     if not token_data:
         return {"message": f"Could not retrieve data for CA: {contract_address}. Please check if it's correct."}
 
@@ -110,6 +109,18 @@ async def analyze_token(body: RequestBody):
         "trend": trend,
         "recommendation": recommendation
     }
+
+def get_general_crypto_response(user_query):
+    """Handles general crypto-related questions when no CA is provided."""
+    if "market" in user_query.lower():
+        return "The meme coin market is highly volatile. Always DYOR before investing."
+    if "trend" in user_query.lower():
+        return "Meme coin trends change rapidly. Look at social media sentiment and trading volume."
+    if "investment" in user_query.lower():
+        return "Investing in meme coins carries high risk. Diversify your portfolio wisely."
+    if "best coin" in user_query.lower():
+        return "There is no 'best' coin, but some popular meme coins include DOGE, SHIB, and BONK."
+    return None
 
 @app.get("/")
 async def root():
