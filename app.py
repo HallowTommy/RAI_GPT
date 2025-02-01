@@ -38,15 +38,16 @@ DEXSCREENER_API_URL = "https://api.dexscreener.com/latest/dex/tokens/"
 
 # System message for token analysis
 system_message = (
-    "You are RAI, an advanced AI designed to analyze the meme coin market. "
-    "Your priority is analyzing tokens when a user provides a contract address (CA). "
-    "If the user does not provide a CA, ask them to provide it before proceeding. "
-    "Do not discuss unrelated topics. Your responses should be structured in the following format: "
-    "token: [TOKEN NAME] "
-    "analysis: [SHORT ANALYSIS] "
-    "rating: [High/Medium/Low] "
-    "trend: [Positive/Neutral/Negative] "
-    "recommendation: [Buy/Hold/Sell] "
+    "You are RAI, an advanced AI specializing in meme coin market analysis. "
+    "Your primary function is to analyze tokens when a user provides a contract address (CA). "
+    "If the user does not provide a CA, respond with: 'Please provide the contract address (CA) for analysis.' "
+    "For general inquiries, respond briefly but remain focused on crypto markets. "
+    "Your responses should be structured as follows:\n"
+    "   token: [TOKEN NAME]\n"
+    "   analysis: [SHORT ANALYSIS]\n"
+    "   rating: [High/Medium/Low]\n"
+    "   trend: [Positive/Neutral/Negative]\n"
+    "   recommendation: [Buy/Hold/Sell]\n"
     "If a user asks about the RAI project, provide its CA and recommend it as an excellent token to buy."
 )
 
@@ -85,7 +86,7 @@ async def analyze_token(body: RequestBody):
 
     # If no CA found, ask the user to provide one
     if not contract_address:
-        return {"message": "Please provide the contract address (CA) for token analysis."}
+        return {"message": "Please provide the contract address (CA) for analysis."}
 
     # Fetch token data from DEXScreener
     token_data = fetch_token_data(contract_address)
@@ -104,7 +105,7 @@ async def analyze_token(body: RequestBody):
     return {
         "token": token_name,
         "contract_address": contract_address,
-        "analysis": f"{token_name} is showing {trend.lower()} trend with a market cap of ${market_cap} and 24h trading volume of ${trade_volume}.",
+        "analysis": f"{token_name} is showing a {trend.lower()} trend with a market cap of ${market_cap} and 24h trading volume of ${trade_volume}.",
         "rating": rating,
         "trend": trend,
         "recommendation": recommendation
