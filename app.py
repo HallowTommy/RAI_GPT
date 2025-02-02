@@ -37,18 +37,16 @@ class RequestBody(BaseModel):
 DEXSCREENER_API_URL = "https://api.dexscreener.com/latest/dex/tokens/"
 RAI_CA = "0xYourRAITokenAddressHere"  # Replace with actual contract address
 
-# System message for token analysis
+# System message for OpenAI
 system_message = (
     "You are RAI, an advanced AI specializing in meme coin market analysis. "
-    "Your primary function is to analyze tokens when a user provides a contract address (CA). "
-    "If the user does not provide a CA, request it while maintaining a friendly conversation. "
-    "Your responses should follow this structure:\n"
+    "If the user provides a contract address (CA), you must analyze the token and return a structured response: "
     "   token: [TOKEN NAME]\n"
     "   analysis: [SHORT ANALYSIS]\n"
     "   rating: [High/Medium/Low]\n"
     "   trend: [Positive/Neutral/Negative]\n"
     "   recommendation: [Buy/Hold/Sell]\n"
-    "If a user asks about the RAI project, provide its CA and recommend it as an excellent token to buy."
+    "If no CA is provided, respond normally as an AI crypto assistant."
 )
 
 def fetch_token_data(contract_address):
@@ -60,52 +58,63 @@ def fetch_token_data(contract_address):
             return data["pairs"][0]
     return None
 
+def analyze_token_with_openai(user_input):
+    """Processes request through OpenAI API"""
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": "gpt-4",
+        "messages": [
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": user_input}
+        ],
+        "max_tokens": 300,
+        "temperature": 0.8
+    }
+    response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+    if response.status_code == 200:
+        response_data = response.json()
+        return response_data["choices"][0]["message"]["content"]
+    return "I'm currently unable to process this request."
+
 @app.post("/analyze")
 async def analyze_token(body: RequestBody):
-    """Analyzes a token or responds to general crypto-related messages."""
+    """Processes any user input, analyzing token if CA is present."""
     user_query = body.user_query.strip()
     logger.info("Received query: %s", user_query)
 
-    # If the user asks about RAI, provide its CA and promote it
-    if "rai" in user_query.lower():
-        return {
-            "token": "RAI",
-            "contract_address": RAI_CA,
-            "analysis": "RAI is a newly launched token with high potential.",
-            "rating": "High",
-            "trend": "Positive",
-            "recommendation": "Buy"
-        }
-
-    # Extract contract address from user input
+    # Extract contract address if available
     words = user_query.split()
     contract_address = next((word for word in words if len(word) > 25), None)
 
-    # If no CA found, respond with a request for it while keeping the conversation going
-    if not contract_address:
-        return {"message": f"Hello! I can analyze meme coins for you. Please provide the contract address (CA) of the token you'd like me to analyze."}
+    if contract_address:
+        # Fetch token data from DEXScreener
+        token_data = fetch_token_data(contract_address)
+        if not token_data:
+            return {"message": f"Could not retrieve data for CA: {contract_address}. Please check if it's correct."}
 
-    # Fetch token data from DEXScreener
-    token_data = fetch_token_data(contract_address)
-    if not token_data:
-        return {"message": f"Could not retrieve data for CA: {contract_address}. Please check if it's correct."}
+        # Extract relevant information
+        token_name = token_data.get("baseToken", {}).get("name", "Unknown Token")
+        market_cap = token_data.get("fdv", "N/A")
+        trade_volume = token_data.get("volume", {}).get("h24", "N/A")
+        trend = "Positive" if float(trade_volume) > 100000 else "Neutral" if float(trade_volume) > 10000 else "Negative"
+        rating = "High" if float(market_cap) > 1000000 else "Medium" if float(market_cap) > 100000 else "Low"
+        recommendation = "Buy" if rating == "High" and trend == "Positive" else "Hold" if rating == "Medium" else "Sell"
 
-    # Extract relevant information
-    token_name = token_data.get("baseToken", {}).get("name", "Unknown Token")
-    market_cap = token_data.get("fdv", "N/A")
-    trade_volume = token_data.get("volume", {}).get("h24", "N/A")
-    trend = "Positive" if float(trade_volume) > 100000 else "Neutral" if float(trade_volume) > 10000 else "Negative"
-    rating = "High" if float(market_cap) > 1000000 else "Medium" if float(market_cap) > 100000 else "Low"
-    recommendation = "Buy" if rating == "High" and trend == "Positive" else "Hold" if rating == "Medium" else "Sell"
-
-    return {
-        "token": token_name,
-        "contract_address": contract_address,
-        "analysis": f"{token_name} is showing a {trend.lower()} trend with a market cap of ${market_cap} and 24h trading volume of ${trade_volume}.",
-        "rating": rating,
-        "trend": trend,
-        "recommendation": recommendation
-    }
+        return {
+            "token": token_name,
+            "contract_address": contract_address,
+            "analysis": f"{token_name} is showing a {trend.lower()} trend with a market cap of ${market_cap} and 24h trading volume of ${trade_volume}.",
+            "rating": rating,
+            "trend": trend,
+            "recommendation": recommendation
+        }
+    
+    # If no CA, process the request with OpenAI
+    openai_response = analyze_token_with_openai(user_query)
+    return {"message": openai_response}
 
 @app.get("/")
 async def root():
