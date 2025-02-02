@@ -32,35 +32,21 @@ app.add_middleware(
 )
 
 class RequestBody(BaseModel):
+    token_name: str = "RAI"
     user_query: str
 
 # System message for token analysis
 system_message = (
-    "You are RAI, an advanced AI specializing in meme coin market analysis. "
-    "Your goal is to analyze meme coins based on the given contract address (CA) and provide structured insights. "
-    "Your response must follow this format: "
-    "\n    token: [TOKEN NAME]"
-    "\n    analysis: [SHORT ANALYSIS]"
-    "\n    rating: [High/Medium/Low]"
-    "\n    trend: [Positive/Neutral/Negative]"
-    "\n    recommendation: [Buy/Hold/Sell]"
-    "\n    If the user does not provide a contract address, kindly ask them to provide one."
+    "You are RAI, an advanced AI designed to analyze the meme coin market. "
+    "You provide users with insights into token trends, risks, and opportunities. "
+    "You ONLY discuss topics related to shitcoins, meme coins, and the crypto market. "
+    "If a user asks about something unrelated to crypto, politely redirect them back to the topic."
 )
 
 @app.post("/analyze")
 async def analyze_token(body: RequestBody):
-    """Processes any user input, analyzing the token if a CA is present."""
-    user_query = body.user_query.strip()
-    logger.info("Received query: %s", user_query)
-
-    # Extract contract address if available
-    words = user_query.split()
-    contract_address = next((word for word in words if len(word) > 25), None)
-
-    if not contract_address:
-        return {"message": "Please provide a valid contract address (CA) for analysis."}
-
-    logger.info("Contract address detected: %s", contract_address)
+    """ Analyzes the token and provides recommendations. """
+    logger.info("Received request for token: %s | Query: %s", body.token_name, body.user_query)
 
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
@@ -70,7 +56,7 @@ async def analyze_token(body: RequestBody):
         "model": "gpt-4",
         "messages": [
             {"role": "system", "content": system_message},
-            {"role": "user", "content": f"Analyze token with CA: {contract_address}"}
+            {"role": "user", "content": f"Analyze {body.token_name}: {body.user_query}"}
         ],
         "max_tokens": 300,
         "temperature": 0.8
@@ -82,8 +68,7 @@ async def analyze_token(body: RequestBody):
         if response.status_code == 200:
             response_data = response.json()
             analysis = response_data["choices"][0]["message"]["content"]
-            logger.info("Returning AI-generated token analysis: %s", analysis)
-            return {"token_analysis": analysis}
+            return {"token": body.token_name, "analysis": analysis}
         else:
             logger.error("OpenAI API Error: %s", response.text)
             raise HTTPException(status_code=response.status_code, detail=response.text)
@@ -93,4 +78,4 @@ async def analyze_token(body: RequestBody):
 
 @app.get("/")
 async def root():
-    return {"message": "Welcome to the RAI Token Analysis API. Use /analyze with a valid contract address to get token insights."}
+    return {"message": "Welcome to the RAI Token Analysis API. Use /analyze to get token insights."}
