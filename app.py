@@ -51,15 +51,19 @@ system_message = (
 
 def fetch_token_data(contract_address):
     """Fetches token data from DEXScreener API"""
+    logger.info("Fetching data from DEXScreener for CA: %s", contract_address)
     response = requests.get(f"{DEXSCREENER_API_URL}{contract_address}")
     if response.status_code == 200:
         data = response.json()
         if "pairs" in data and len(data["pairs"]) > 0:
+            logger.info("Token data retrieved successfully for CA: %s", contract_address)
             return data["pairs"][0]
+    logger.warning("No token data found for CA: %s", contract_address)
     return None
 
 def analyze_token_with_openai(user_input):
     """Processes request through OpenAI API"""
+    logger.info("Sending user input to OpenAI: %s", user_input)
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
         "Content-Type": "application/json"
@@ -76,7 +80,9 @@ def analyze_token_with_openai(user_input):
     response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
     if response.status_code == 200:
         response_data = response.json()
+        logger.info("OpenAI response received successfully.")
         return response_data["choices"][0]["message"]["content"]
+    logger.error("OpenAI API Error: %s", response.text)
     return "I'm currently unable to process this request."
 
 @app.post("/analyze")
@@ -90,6 +96,7 @@ async def analyze_token(body: RequestBody):
     contract_address = next((word for word in words if len(word) > 25), None)
 
     if contract_address:
+        logger.info("Contract address detected: %s", contract_address)
         # Fetch token data from DEXScreener
         token_data = fetch_token_data(contract_address)
         if not token_data:
@@ -103,6 +110,7 @@ async def analyze_token(body: RequestBody):
         rating = "High" if float(market_cap) > 1000000 else "Medium" if float(market_cap) > 100000 else "Low"
         recommendation = "Buy" if rating == "High" and trend == "Positive" else "Hold" if rating == "Medium" else "Sell"
 
+        logger.info("Generated structured response for token analysis.")
         return {
             "token": token_name,
             "contract_address": contract_address,
@@ -113,9 +121,11 @@ async def analyze_token(body: RequestBody):
         }
     
     # If no CA, process the request with OpenAI
+    logger.info("No contract address found. Forwarding to OpenAI for general response.")
     openai_response = analyze_token_with_openai(user_query)
     return {"message": openai_response}
 
 @app.get("/")
 async def root():
     return {"message": "Welcome to the RAI Token Analysis API. Use /analyze to get token insights."}
+
