@@ -1,41 +1,42 @@
 import os
 import logging
 import requests
+import re
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-# Logging setup
+# Логирование
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-try:
-    load_dotenv()
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-    if not OPENAI_API_KEY:
-        raise ValueError("Missing OpenAI API Key!")
-except Exception as e:
-    logger.error("Error loading environment variables: %s", e)
-    raise RuntimeError("Configuration loading error")
+# Загрузка переменных окружения
+load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+SOLSCAN_API_KEY = os.getenv("SOLSCAN_API_KEY")
 
+if not OPENAI_API_KEY:
+    raise RuntimeError("Не найден API-ключ OpenAI!")
+if not SOLSCAN_API_KEY:
+    raise RuntimeError("Не найден API-ключ Solscan!")
+
+# FastAPI сервер
 app = FastAPI()
 
-# Enable CORS for all domains
+# Разрешаем CORS для всех доменов
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # If you want to restrict, specify ['https://your-domain.com']
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, OPTIONS, etc.)
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 class RequestBody(BaseModel):
-    token_name: str = "RAI"
     user_query: str
 
-# System message for token analysis
+# Системное сообщение для OpenAI
 system_message = (
     "You are RAI, an advanced AI designed to analyze the meme coin market. "
     "You provide users with insights into token trends, risks, and opportunities. "
@@ -43,39 +44,93 @@ system_message = (
     "If a user asks about something unrelated to crypto, politely redirect them back to the topic."
 )
 
-@app.post("/analyze")
-async def analyze_token(body: RequestBody):
-    """ Analyzes the token and provides recommendations. """
-    logger.info("Received request for token: %s | Query: %s", body.token_name, body.user_query)
+# Регулярное выражение для поиска Solana CA (Public Key)
+SOLANA_CA_PATTERN = r"\b[1-9A-HJ-NP-Za-km-z]{32,44}\b"
 
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": "gpt-4",
-        "messages": [
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": f"Analyze {body.token_name}: {body.user_query}"}
-        ],
-        "max_tokens": 300,
-        "temperature": 0.8
-    }
+def get_token_info(contract_address):
+    """ Получает данные о токене через Solscan API """
+    url = f"https://pro-api.solscan.io/v2/token/meta?tokenAddress={contract_address}"
+    headers = {"accept": "application/json", "token": SOLSCAN_API_KEY}
 
-    try:
-        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        return response.json().get("data", {})
+    else:
+        logger.error("Ошибка Solscan API: %s", response.text)
+        return None
 
-        if response.status_code == 200:
-            response_data = response.json()
-            analysis = response_data["choices"][0]["message"]["content"]
-            return {"token": body.token_name, "analysis": analysis}
-        else:
-            logger.error("OpenAI API Error: %s", response.text)
-            raise HTTPException(status_code=response.status_code, detail=response.text)
-    except Exception as e:
-        logger.error("Unexpected error: %s", e)
-        raise HTTPException(status_code=500, detail="Internal server error.")
+@app.post("/chat")
+async def chat_with_ai(body: RequestBody):
+    """ Логика обработки двух сценариев: обычный чат и анализ токена """
+    user_query = body.user_query.strip()
+    logger.info("Получен запрос: %s", user_query)
+
+    # Проверяем, есть ли в тексте Solana CA
+    match = re.search(SOLANA_CA_PATTERN, user_query)
+    
+    if match:
+        contract_address = match.group(0)
+        logger.info("Обнаружен Solana CA: %s", contract_address)
+
+        # Запрашиваем данные о токене
+        token_data = get_token_info(contract_address)
+        if not token_data:
+            raise HTTPException(status_code=400, detail="Не удалось получить данные о токене.")
+
+        # Подготавливаем запрос для OpenAI
+        analysis_prompt = (
+            f"Analyze the Solana token at {contract_address} with the following data: {token_data}"
+        )
+
+        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+        payload = {
+            "model": "gpt-4",
+            "messages": [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": analysis_prompt}
+            ],
+            "max_tokens": 300,
+            "temperature": 0.7
+        }
+
+        try:
+            response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+            if response.status_code == 200:
+                response_data = response.json()
+                analysis = response_data["choices"][0]["message"]["content"]
+                return {"contract_address": contract_address, "analysis": analysis}
+            else:
+                logger.error("Ошибка OpenAI API: %s", response.text)
+                raise HTTPException(status_code=response.status_code, detail=response.text)
+        except Exception as e:
+            logger.error("Ошибка: %s", e)
+            raise HTTPException(status_code=500, detail="Ошибка сервера.")
+    else:
+        # Если в запросе нет CA, просто отвечаем пользователю через OpenAI
+        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+        payload = {
+            "model": "gpt-4",
+            "messages": [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_query}
+            ],
+            "max_tokens": 300,
+            "temperature": 0.8
+        }
+
+        try:
+            response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+            if response.status_code == 200:
+                response_data = response.json()
+                answer = response_data["choices"][0]["message"]["content"]
+                return {"response": answer}
+            else:
+                logger.error("Ошибка OpenAI API: %s", response.text)
+                raise HTTPException(status_code=response.status_code, detail=response.text)
+        except Exception as e:
+            logger.error("Ошибка: %s", e)
+            raise HTTPException(status_code=500, detail="Ошибка сервера.")
 
 @app.get("/")
 async def root():
-    return {"message": "Welcome to the RAI Token Analysis API. Use /analyze to get token insights."}
+    return {"message": "RAI AI Chat & Token Analysis API. Use /chat to interact with AI or analyze tokens by CA."}
