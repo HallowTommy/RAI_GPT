@@ -47,19 +47,7 @@ system_message = (
 # Регулярное выражение для поиска Solana CA (Public Key)
 SOLANA_CA_PATTERN = r"\b[1-9A-HJ-NP-Za-km-z]{32,44}\b"
 
-def get_token_info(contract_address):
-    """ Получает данные о токене через Solscan API """
-    url = f"https://pro-api.solscan.io/v2/token/meta?tokenAddress={contract_address}"
-    headers = {"accept": "application/json", "token": SOLSCAN_API_KEY}
-
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        return response.json().get("data", {})
-    else:
-        logger.error("Ошибка Solscan API: %s", response.text)
-        return None
-
-@app.post("/analyze")  # Или "/chat" если меняешь frontend
+@app.post("/analyze")
 async def analyze_or_chat(body: RequestBody):
     """ Логика обработки двух сценариев: обычный чат и анализ токена """
     user_query = body.user_query.strip()
@@ -67,45 +55,10 @@ async def analyze_or_chat(body: RequestBody):
 
     # Проверяем, есть ли в тексте Solana CA
     match = re.search(SOLANA_CA_PATTERN, user_query)
-    
+
     if match:
-        contract_address = match.group(0)
-        logger.info("Обнаружен Solana CA: %s", contract_address)
+        return {"response": "🚀 Функция анализа CA пока не реализована."}  # Временно, пока делаем чат
 
-        # Запрашиваем данные о токене
-        token_data = get_token_info(contract_address)
-        if not token_data:
-            return {"error": "❌ Не удалось получить данные о токене."}
-
-        # Подготавливаем запрос для OpenAI
-        analysis_prompt = (
-            f"Analyze the Solana token at {contract_address} with the following data: {token_data}"
-        )
-
-        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
-        payload = {
-            "model": "gpt-4",
-            "messages": [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": analysis_prompt}
-            ],
-            "max_tokens": 300,
-            "temperature": 0.7
-        }
-
-        try:
-            response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-            if response.status_code == 200:
-                response_data = response.json()
-                analysis = response_data["choices"][0]["message"]["content"]
-                return {"contract_address": contract_address, "analysis": analysis}
-            else:
-                logger.error("Ошибка OpenAI API: %s", response.text)
-                return {"error": "❌ Ошибка при анализе. Попробуйте позже."}
-        except Exception as e:
-            logger.error("Ошибка: %s", e)
-            return {"error": "❌ Ошибка сервера. Попробуйте позже."}
-    
     else:
         # Если в запросе нет CA, просто отвечаем пользователю через OpenAI
         headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
@@ -115,23 +68,38 @@ async def analyze_or_chat(body: RequestBody):
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": user_query}
             ],
-            "max_tokens": 300,
+            "max_tokens": 150,
             "temperature": 0.8
         }
 
         try:
             response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-            if response.status_code == 200:
-                response_data = response.json()
-                answer = response_data["choices"][0]["message"]["content"]
+            
+            # Проверяем статус ответа
+            if response.status_code != 200:
+                logger.error("Ошибка OpenAI API: %s", response.text)
+                return {"error": "❌ Ошибка OpenAI. Попробуйте позже."}
+            
+            response_data = response.json()
+
+            # Проверяем, есть ли текст в ответе
+            if "choices" in response_data and len(response_data["choices"]) > 0:
+                answer = response_data["choices"][0].get("message", {}).get("content", "").strip()
+                if not answer:
+                    logger.error("OpenAI API вернул пустой ответ")
+                    return {"error": "❌ OpenAI API не дал ответа. Попробуйте другой запрос."}
+                
+                logger.info("Ответ от OpenAI: %s", answer)
                 return {"response": answer}
             else:
-                logger.error("Ошибка OpenAI API: %s", response.text)
-                return {"error": "❌ Ошибка при ответе. Попробуйте позже."}
+                logger.error("Ошибка OpenAI: неожиданный формат ответа %s", response_data)
+                return {"error": "❌ Ошибка при обработке ответа от OpenAI."}
+        
         except Exception as e:
-            logger.error("Ошибка: %s", e)
+            logger.error("Ошибка при запросе к OpenAI: %s", e)
             return {"error": "❌ Ошибка сервера. Попробуйте позже."}
 
 @app.get("/")
 async def root():
     return {"message": "RAI AI Chat & Token Analysis API. Use /analyze to interact with AI or analyze tokens by CA."}
+
