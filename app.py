@@ -59,8 +59,8 @@ def get_token_info(contract_address):
         logger.error("Ошибка Solscan API: %s", response.text)
         return None
 
-@app.post("/chat")
-async def chat_with_ai(body: RequestBody):
+@app.post("/analyze")  # Или "/chat" если меняешь frontend
+async def analyze_or_chat(body: RequestBody):
     """ Логика обработки двух сценариев: обычный чат и анализ токена """
     user_query = body.user_query.strip()
     logger.info("Получен запрос: %s", user_query)
@@ -75,7 +75,7 @@ async def chat_with_ai(body: RequestBody):
         # Запрашиваем данные о токене
         token_data = get_token_info(contract_address)
         if not token_data:
-            raise HTTPException(status_code=400, detail="Не удалось получить данные о токене.")
+            return {"error": "❌ Не удалось получить данные о токене."}
 
         # Подготавливаем запрос для OpenAI
         analysis_prompt = (
@@ -101,10 +101,11 @@ async def chat_with_ai(body: RequestBody):
                 return {"contract_address": contract_address, "analysis": analysis}
             else:
                 logger.error("Ошибка OpenAI API: %s", response.text)
-                raise HTTPException(status_code=response.status_code, detail=response.text)
+                return {"error": "❌ Ошибка при анализе. Попробуйте позже."}
         except Exception as e:
             logger.error("Ошибка: %s", e)
-            raise HTTPException(status_code=500, detail="Ошибка сервера.")
+            return {"error": "❌ Ошибка сервера. Попробуйте позже."}
+    
     else:
         # Если в запросе нет CA, просто отвечаем пользователю через OpenAI
         headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
@@ -126,11 +127,11 @@ async def chat_with_ai(body: RequestBody):
                 return {"response": answer}
             else:
                 logger.error("Ошибка OpenAI API: %s", response.text)
-                raise HTTPException(status_code=response.status_code, detail=response.text)
+                return {"error": "❌ Ошибка при ответе. Попробуйте позже."}
         except Exception as e:
             logger.error("Ошибка: %s", e)
-            raise HTTPException(status_code=500, detail="Ошибка сервера.")
+            return {"error": "❌ Ошибка сервера. Попробуйте позже."}
 
 @app.get("/")
 async def root():
-    return {"message": "RAI AI Chat & Token Analysis API. Use /chat to interact with AI or analyze tokens by CA."}
+    return {"message": "RAI AI Chat & Token Analysis API. Use /analyze to interact with AI or analyze tokens by CA."}
