@@ -47,17 +47,71 @@ system_message = (
 # Регулярное выражение для поиска Solana CA (Public Key)
 SOLANA_CA_PATTERN = r"\b[1-9A-HJ-NP-Za-km-z]{32,44}\b"
 
+def get_token_info(ca):
+    """ Получает данные о токене через Solscan API """
+    logger.info(f"🔍 Запрашиваем данные о токене: {ca}")
+
+    url = f"https://pro-api.solscan.io/v2/token/meta?tokenAddress={ca}"
+    headers = {"accept": "application/json", "token": SOLSCAN_API_KEY}
+
+    try:
+        response = requests.get(url, headers=headers)
+        
+        # Логируем статус ответа
+        logger.info(f"🔄 Статус ответа Solscan: {response.status_code}")
+
+        # Если запрос не успешен, логируем ошибку
+        if response.status_code != 200:
+            logger.error(f"❌ Ошибка Solscan API: {response.text}")
+            return None
+        
+        # Парсим JSON-ответ
+        data = response.json().get("data", {})
+
+        # Проверяем, есть ли в данных нужные поля
+        if not data:
+            logger.warning("⚠️ Данные о токене отсутствуют или пустые.")
+            return None
+
+        # Извлекаем нужные параметры
+        token_info = {
+            "name": data.get("name"),
+            "symbol": data.get("symbol"),
+            "liquidity": data.get("liquidity", 0),
+            "volume": data.get("volume24h", 0),
+            "created_at": data.get("createdAt"),
+            "decimals": data.get("decimals", 0),
+            "holders": data.get("holderCount", 0)
+        }
+
+        # Логируем успешный результат
+        logger.info(f"✅ Успешно получили данные о токене: {token_info}")
+
+        return token_info
+
+    except requests.RequestException as e:
+        logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
+        return None
+
 @app.post("/analyze")
 async def analyze_or_chat(body: RequestBody):
     """ Логика обработки двух сценариев: обычный чат и анализ токена """
     user_query = body.user_query.strip()
-    logger.info("Получен запрос: %s", user_query)
+    logger.info("📩 Получен запрос: %s", user_query)
 
-    # Проверяем, есть ли в тексте Solana CA
+    # Проверяем, есть ли в запросе CA
     match = re.search(SOLANA_CA_PATTERN, user_query)
-
+    
     if match:
-        return {"response": "🚀 Функция анализа CA пока не реализована."}  # Временно, пока делаем чат
+        ca = match.group(0)
+        logger.info(f"📍 Найден контрактный адрес: {ca}")
+
+        # Запрашиваем информацию о токене
+        token_data = get_token_info(ca)
+        if not token_data:
+            return {"error": "❌ Не удалось получить данные о токене."}
+
+        return {"contract_address": ca, "token_data": token_data}
 
     else:
         # Если в запросе нет CA, просто отвечаем пользователю через OpenAI
@@ -102,4 +156,3 @@ async def analyze_or_chat(body: RequestBody):
 @app.get("/")
 async def root():
     return {"message": "RAI AI Chat & Token Analysis API. Use /analyze to interact with AI or analyze tokens by CA."}
-
