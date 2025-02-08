@@ -47,42 +47,54 @@ system_message = (
 # Регулярное выражение для поиска Solana CA (Public Key)
 SOLANA_CA_PATTERN = r"\b[1-9A-HJ-NP-Za-km-z]{32,44}\b"
 
-def get_token_info(ca):
-    """ Получает данные о токене через Solscan API Pro (Level 2) """
-    logger.info(f"🔍 Запрашиваем данные о токене: {ca}")
+def get_token_transfers(ca):
+    """ Получает список последних 100 транзакций токена через Solscan API """
+    logger.info(f"🔍 Запрашиваем последние транзакции для токена: {ca}")
 
-    url = f"https://pro-api.solscan.io/v2/token/meta?tokenAddress={ca}"
-    headers = {"accept": "application/json", "token": SOLSCAN_API_KEY}
+    url = (
+        f"https://pro-api.solscan.io/v2.0/token/transfer?"
+        f"address={ca}"
+        f"&activity_type[]=ACTIVITY_SPL_TRANSFER"
+        f"&page=1&page_size=100&sort_by=block_time&sort_order=desc"
+    )
+
+    headers = {
+        "accept": "application/json",
+        "Content-Type": "application/json",
+        "token": SOLSCAN_API_KEY
+    }
 
     try:
         response = requests.get(url, headers=headers)
         logger.info(f"🔄 Статус ответа Solscan: {response.status_code}")
-        
+
         if response.status_code != 200:
             logger.error(f"❌ Ошибка Solscan API: {response.text}")
-            return None
+            return {"error": "❌ Ошибка при запросе к Solscan API."}
 
-        data = response.json().get("data", {})
+        data = response.json().get("data", [])
         if not data:
-            logger.warning("⚠️ Данные о токене отсутствуют или пустые.")
-            return None
+            logger.warning("⚠️ Нет данных о транзакциях.")
+            return {"error": "⚠️ Нет данных о транзакциях токена."}
 
-        token_info = {
-            "name": data.get("name"),
-            "symbol": data.get("symbol"),
-            "liquidity": data.get("liquidity", 0),
-            "volume": data.get("volume24h", 0),
-            "created_at": data.get("createdAt"),
-            "decimals": data.get("decimals", 0),
-            "holders": data.get("holderCount", 0)
-        }
+        # Формируем список последних переводов
+        transfers = []
+        for tx in data:
+            transfers.append({
+                "tx_id": tx["trans_id"],
+                "time": tx["time"],
+                "from": tx["from_address"],
+                "to": tx["to_address"],
+                "amount": tx["amount"],
+                "value": tx["value"]
+            })
 
-        logger.info(f"✅ Успешно получили данные о токене: {token_info}")
-        return token_info
+        logger.info(f"✅ Получены {len(transfers)} транзакций для токена {ca}")
+        return transfers
 
     except requests.RequestException as e:
         logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
-        return None
+        return {"error": "❌ Ошибка соединения с Solscan API."}
 
 @app.post("/analyze")
 async def analyze_or_chat(body: RequestBody):
@@ -90,19 +102,22 @@ async def analyze_or_chat(body: RequestBody):
     user_query = body.user_query.strip()
     logger.info("📩 Получен запрос: %s", user_query)
 
-    # Проверяем, есть ли в запросе CA
+    # Проверяем, есть ли в тексте Solana CA
     match = re.search(SOLANA_CA_PATTERN, user_query)
-    
+
     if match:
         ca = match.group(0)
         logger.info(f"📍 Найден контрактный адрес: {ca}")
 
-        # Запрашиваем информацию о токене
-        token_data = get_token_info(ca)
-        if not token_data:
-            return {"error": "❌ Не удалось получить данные о токене."}
+        # Запрашиваем последние транзакции
+        transfers = get_token_transfers(ca)
+        if "error" in transfers:
+            return transfers
 
-        return {"contract_address": ca, "token_data": token_data}
+        return {
+            "contract_address": ca,
+            "transfers": transfers
+        }
 
     else:
         # Обычный чат с ИИ
@@ -119,11 +134,11 @@ async def analyze_or_chat(body: RequestBody):
 
         try:
             response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-            
+
             if response.status_code != 200:
                 logger.error("Ошибка OpenAI API: %s", response.text)
                 return {"error": "❌ Ошибка OpenAI. Попробуйте позже."}
-            
+
             response_data = response.json()
 
             if "choices" in response_data and len(response_data["choices"]) > 0:
@@ -131,13 +146,13 @@ async def analyze_or_chat(body: RequestBody):
                 if not answer:
                     logger.error("OpenAI API вернул пустой ответ")
                     return {"error": "❌ OpenAI API не дал ответа. Попробуйте другой запрос."}
-                
+
                 logger.info("Ответ от OpenAI: %s", answer)
                 return {"response": answer}
             else:
                 logger.error("Ошибка OpenAI: неожиданный формат ответа %s", response_data)
                 return {"error": "❌ Ошибка при обработке ответа от OpenAI."}
-        
+
         except Exception as e:
             logger.error("Ошибка при запросе к OpenAI: %s", e)
             return {"error": "❌ Ошибка сервера. Попробуйте позже."}
