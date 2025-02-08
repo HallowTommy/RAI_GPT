@@ -48,7 +48,7 @@ system_message = (
 SOLANA_CA_PATTERN = r"\b[1-9A-HJ-NP-Za-km-z]{32,44}\b"
 
 def get_token_info(ca):
-    """ Получает данные о токене через Solscan Pro API """
+    """ Получает данные о токене через Solscan API Pro (Level 2) """
     logger.info(f"🔍 Запрашиваем данные о токене: {ca}")
 
     url = f"https://pro-api.solscan.io/v2/token/meta?tokenAddress={ca}"
@@ -56,25 +56,17 @@ def get_token_info(ca):
 
     try:
         response = requests.get(url, headers=headers)
-        logger.info(f"🔄 Запрос к Solscan, статус: {response.status_code}")
-
-        # Проверяем статус ответа
-        if response.status_code == 404:
-            logger.warning(f"⚠️ Токен {ca} не найден в Solscan.")
-            return {"error": "❌ Токен не найден в Solscan API."}
-
+        logger.info(f"🔄 Статус ответа Solscan: {response.status_code}")
+        
         if response.status_code != 200:
             logger.error(f"❌ Ошибка Solscan API: {response.text}")
-            return {"error": f"❌ Ошибка API Solscan: {response.text}"}
+            return None
 
-        # Разбираем JSON-ответ
         data = response.json().get("data", {})
-
         if not data:
-            logger.warning("⚠️ Данные о токене отсутствуют.")
-            return {"error": "❌ Данные о токене отсутствуют."}
+            logger.warning("⚠️ Данные о токене отсутствуют или пустые.")
+            return None
 
-        # Извлекаем ключевую информацию о токене
         token_info = {
             "name": data.get("name"),
             "symbol": data.get("symbol"),
@@ -90,7 +82,7 @@ def get_token_info(ca):
 
     except requests.RequestException as e:
         logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
-        return {"error": "❌ Ошибка соединения с Solscan API."}
+        return None
 
 @app.post("/analyze")
 async def analyze_or_chat(body: RequestBody):
@@ -113,7 +105,7 @@ async def analyze_or_chat(body: RequestBody):
         return {"contract_address": ca, "token_data": token_data}
 
     else:
-        # Если в запросе нет CA, просто отвечаем пользователю через OpenAI
+        # Обычный чат с ИИ
         headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
         payload = {
             "model": "gpt-4",
@@ -128,14 +120,12 @@ async def analyze_or_chat(body: RequestBody):
         try:
             response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
             
-            # Проверяем статус ответа
             if response.status_code != 200:
                 logger.error("Ошибка OpenAI API: %s", response.text)
                 return {"error": "❌ Ошибка OpenAI. Попробуйте позже."}
             
             response_data = response.json()
 
-            # Проверяем, есть ли текст в ответе
             if "choices" in response_data and len(response_data["choices"]) > 0:
                 answer = response_data["choices"][0].get("message", {}).get("content", "").strip()
                 if not answer:
