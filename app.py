@@ -48,7 +48,7 @@ system_message = (
 SOLANA_CA_PATTERN = r"\b[1-9A-HJ-NP-Za-km-z]{32,44}\b"
 
 def get_token_info(ca):
-    """ Получает данные о токене через Solscan API """
+    """ Получает данные о токене через Solscan Pro API """
     logger.info(f"🔍 Запрашиваем данные о токене: {ca}")
 
     url = f"https://pro-api.solscan.io/v2/token/meta?tokenAddress={ca}"
@@ -56,24 +56,25 @@ def get_token_info(ca):
 
     try:
         response = requests.get(url, headers=headers)
-        
-        # Логируем статус ответа
-        logger.info(f"🔄 Статус ответа Solscan: {response.status_code}")
+        logger.info(f"🔄 Запрос к Solscan, статус: {response.status_code}")
 
-        # Если запрос не успешен, логируем ошибку
+        # Проверяем статус ответа
+        if response.status_code == 404:
+            logger.warning(f"⚠️ Токен {ca} не найден в Solscan.")
+            return {"error": "❌ Токен не найден в Solscan API."}
+
         if response.status_code != 200:
             logger.error(f"❌ Ошибка Solscan API: {response.text}")
-            return None
-        
-        # Парсим JSON-ответ
+            return {"error": f"❌ Ошибка API Solscan: {response.text}"}
+
+        # Разбираем JSON-ответ
         data = response.json().get("data", {})
 
-        # Проверяем, есть ли в данных нужные поля
         if not data:
-            logger.warning("⚠️ Данные о токене отсутствуют или пустые.")
-            return None
+            logger.warning("⚠️ Данные о токене отсутствуют.")
+            return {"error": "❌ Данные о токене отсутствуют."}
 
-        # Извлекаем нужные параметры
+        # Извлекаем ключевую информацию о токене
         token_info = {
             "name": data.get("name"),
             "symbol": data.get("symbol"),
@@ -84,14 +85,12 @@ def get_token_info(ca):
             "holders": data.get("holderCount", 0)
         }
 
-        # Логируем успешный результат
         logger.info(f"✅ Успешно получили данные о токене: {token_info}")
-
         return token_info
 
     except requests.RequestException as e:
         logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
-        return None
+        return {"error": "❌ Ошибка соединения с Solscan API."}
 
 @app.post("/analyze")
 async def analyze_or_chat(body: RequestBody):
