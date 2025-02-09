@@ -48,13 +48,12 @@ system_message = (
 SOLANA_CA_PATTERN = r"\b[1-9A-HJ-NP-Za-km-z]{32,44}\b"
 
 def get_token_first_transfers(ca):
-    """ Получает самые первые 10 транзакций токена (минтинг и первые переводы) """
-    logger.info(f"🔍 Запрашиваем первые транзакции для токена: {ca}")
+    """ Получает первые 10 реальных транзакций токена (без минтинга) """
+    logger.info(f"🔍 Запрашиваем первые транзакции (без минта) для токена: {ca}")
 
     url = (
         f"https://pro-api.solscan.io/v2.0/token/transfer?"
         f"address={ca}"
-        f"&activity_type[]=ACTIVITY_SPL_MINT"
         f"&activity_type[]=ACTIVITY_SPL_TRANSFER"
         f"&page=1&page_size=10&sort_by=block_time&sort_order=asc"
     )
@@ -89,7 +88,7 @@ def get_token_first_transfers(ca):
                 "value": tx["value"]
             })
 
-        logger.info(f"✅ Получены первые {len(first_transfers)} транзакций для токена {ca}")
+        logger.info(f"✅ Получены первые {len(first_transfers)} транзакции для токена {ca}")
         return first_transfers
 
     except requests.RequestException as e:
@@ -108,7 +107,7 @@ async def analyze_or_chat(body: RequestBody):
         ca = match.group(0)
         logger.info(f"📍 Найден контрактный адрес: {ca}")
 
-        # Запрашиваем первые 10 транзакций токена (минтинг и первые переводы)
+        # Запрашиваем первые 10 реальных транзакций токена (без минта)
         first_transfers = get_token_first_transfers(ca)
 
         return {
