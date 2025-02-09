@@ -47,15 +47,16 @@ system_message = (
 # Регулярное выражение для поиска Solana CA (Public Key)
 SOLANA_CA_PATTERN = r"\b[1-9A-HJ-NP-Za-km-z]{32,44}\b"
 
-def get_token_transfers(ca):
-    """ Получает список последних 100 транзакций токена через Solscan API """
-    logger.info(f"🔍 Запрашиваем последние транзакции для токена: {ca}")
+def get_token_first_transfers(ca):
+    """ Получает первые 10 транзакций токена (минтинг, создание) """
+    logger.info(f"🔍 Запрашиваем первые транзакции (минтинг, создание) для токена: {ca}")
 
     url = (
         f"https://pro-api.solscan.io/v2.0/token/transfer?"
         f"address={ca}"
-        f"&activity_type[]=ACTIVITY_SPL_TRANSFER"
-        f"&page=1&page_size=100&sort_by=block_time&sort_order=desc"
+        f"&activity_type[]=ACTIVITY_SPL_MINT"
+        f"&activity_type[]=ACTIVITY_SPL_CREATE_ACCOUNT"
+        f"&page=1&page_size=10&sort_by=block_time&sort_order=asc"
     )
 
     headers = {
@@ -74,13 +75,12 @@ def get_token_transfers(ca):
 
         data = response.json().get("data", [])
         if not data:
-            logger.warning("⚠️ Нет данных о транзакциях.")
-            return {"error": "⚠️ Нет данных о транзакциях токена."}
+            logger.warning("⚠️ Нет данных о первых транзакциях.")
+            return {"error": "⚠️ Нет данных о первых транзакциях токена."}
 
-        # Формируем список последних переводов
-        transfers = []
+        first_transfers = []
         for tx in data:
-            transfers.append({
+            first_transfers.append({
                 "tx_id": tx["trans_id"],
                 "time": tx["time"],
                 "from": tx["from_address"],
@@ -89,8 +89,8 @@ def get_token_transfers(ca):
                 "value": tx["value"]
             })
 
-        logger.info(f"✅ Получены {len(transfers)} транзакций для токена {ca}")
-        return transfers
+        logger.info(f"✅ Получены первые {len(first_transfers)} транзакций для токена {ca}")
+        return first_transfers
 
     except requests.RequestException as e:
         logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
@@ -102,21 +102,18 @@ async def analyze_or_chat(body: RequestBody):
     user_query = body.user_query.strip()
     logger.info("📩 Получен запрос: %s", user_query)
 
-    # Проверяем, есть ли в тексте Solana CA
     match = re.search(SOLANA_CA_PATTERN, user_query)
 
     if match:
         ca = match.group(0)
         logger.info(f"📍 Найден контрактный адрес: {ca}")
 
-        # Запрашиваем последние транзакции
-        transfers = get_token_transfers(ca)
-        if "error" in transfers:
-            return transfers
+        # Запрашиваем первые 10 транзакций (минтинг, создание)
+        first_transfers = get_token_first_transfers(ca)
 
         return {
             "contract_address": ca,
-            "transfers": transfers
+            "first_transfers": first_transfers
         }
 
     else:
@@ -140,18 +137,14 @@ async def analyze_or_chat(body: RequestBody):
                 return {"error": "❌ Ошибка OpenAI. Попробуйте позже."}
 
             response_data = response.json()
+            answer = response_data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
 
-            if "choices" in response_data and len(response_data["choices"]) > 0:
-                answer = response_data["choices"][0].get("message", {}).get("content", "").strip()
-                if not answer:
-                    logger.error("OpenAI API вернул пустой ответ")
-                    return {"error": "❌ OpenAI API не дал ответа. Попробуйте другой запрос."}
+            if not answer:
+                logger.error("OpenAI API вернул пустой ответ")
+                return {"error": "❌ OpenAI API не дал ответа. Попробуйте другой запрос."}
 
-                logger.info("Ответ от OpenAI: %s", answer)
-                return {"response": answer}
-            else:
-                logger.error("Ошибка OpenAI: неожиданный формат ответа %s", response_data)
-                return {"error": "❌ Ошибка при обработке ответа от OpenAI."}
+            logger.info("Ответ от OpenAI: %s", answer)
+            return {"response": answer}
 
         except Exception as e:
             logger.error("Ошибка при запросе к OpenAI: %s", e)
