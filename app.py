@@ -54,7 +54,9 @@ def get_token_transfers(ca, sort_order="desc"):
     url = (
         f"https://pro-api.solscan.io/v2.0/transaction/token?"
         f"address={ca}"
-        f"&page=1&page_size=10"
+        f"&page=1&page_size=100"
+        f"&sort_by=block_time"
+        f"&sort_order=asc"
     )
 
     headers = {
