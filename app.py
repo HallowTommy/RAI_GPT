@@ -52,10 +52,9 @@ def get_token_transfers(ca, sort_order="desc"):
     logger.info(f"🔍 Запрашиваем транзакции для токена: {ca} (порядок: {sort_order})")
 
     url = (
-        f"https://pro-api.solscan.io/v2.0/token/transfer?"
+        f"https://pro-api.solscan.io/v2.0/transaction/token?"
         f"address={ca}"
-        f"&activity_type[]=ACTIVITY_SPL_TRANSFER"
-        f"&page=1&page_size=100&sort_by=block_time&sort_order={sort_order}"
+        f"&page=1&page_size=10"
     )
 
     headers = {
