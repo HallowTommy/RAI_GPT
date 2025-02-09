@@ -48,7 +48,7 @@ system_message = (
 SOLANA_CA_PATTERN = r"\b[1-9A-HJ-NP-Za-km-z]{32,44}\b"
 
 def get_token_info(ca):
-    """ Получает полную информацию о токене, включая метаданные """
+    """ Получает название токена, иконку, общее количество выпущенных токенов и доп. инфо """
     logger.info(f"🔍 Запрашиваем информацию о токене: {ca}")
 
     url = f"https://pro-api.solscan.io/v2.0/token/meta?address={ca}"
@@ -63,39 +63,28 @@ def get_token_info(ca):
         response = requests.get(url, headers=headers)
         logger.info(f"🔄 Статус ответа (meta): {response.status_code}")
 
-        if response.status_code != 200:
-            logger.error(f"❌ Ошибка Solscan API: {response.text}")
-            return {"error": "❌ Ошибка при запросе к Solscan API."}
+        if response.status_code == 200:
+            data = response.json().get("data", {})
+            if data:
+                token_info = {
+                    "token_name": data.get("name", "Unknown"),
+                    "token_symbol": data.get("symbol", "Unknown"),
+                    "icon_url": data.get("icon", ""),
+                    "total_supply": data.get("supply", "Unknown"),
+                    "holders_count": data.get("holder", 0),
+                    "creator": data.get("creator", "Unknown"),
+                    "created_time": data.get("created_time", 0),
+                    "first_mint_tx": data.get("first_mint_tx", "Unknown"),
+                    "market_cap": data.get("market_cap", "Unknown"),
+                    "description": data.get("metadata", {}).get("description", ""),
+                    "website": data.get("metadata", {}).get("website", ""),
+                    "twitter": data.get("metadata", {}).get("twitter", "")
+                }
+                logger.info(f"✅ Информация о токене получена: {token_info}")
+                return token_info
 
-        data = response.json().get("data", {})
-        if not data:
-            logger.warning("⚠️ Нет информации о токене.")
-            return {"error": "⚠️ Нет информации о токене."}
-
-        # Формируем объект с полной информацией
-        token_info = {
-            "contract_address": data.get("address", ca),
-            "token_name": data.get("name", "Unknown"),
-            "token_symbol": data.get("symbol", "Unknown"),
-            "icon_url": data.get("icon", ""),
-            "decimals": data.get("decimals", 0),
-            "total_supply": data.get("supply", "Unknown"),
-            "holders_count": data.get("holder", 0),
-            "creator": data.get("creator", "Unknown"),
-            "created_time": data.get("created_time", "Unknown"),
-            "first_mint_tx": data.get("first_mint_tx", "Unknown"),
-            "market_cap": data.get("market_cap", "Unknown"),
-            "price": data.get("price", "Unknown"),
-        }
-
-        # Если есть доп. метаданные, подтягиваем их
-        metadata = data.get("metadata", {})
-        token_info["description"] = metadata.get("description", "No description available")
-        token_info["website"] = metadata.get("website", "No website available")
-        token_info["twitter"] = metadata.get("twitter", "No Twitter available")
-
-        logger.info(f"✅ Успешно получена информация о токене: {token_info}")
-        return token_info
+        logger.warning("⚠️ Нет информации о токене.")
+        return {"error": "⚠️ Нет информации о токене."}
 
     except requests.RequestException as e:
         logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
