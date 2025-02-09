@@ -47,6 +47,45 @@ system_message = (
 # Регулярное выражение для поиска Solana CA (Public Key)
 SOLANA_CA_PATTERN = r"\b[1-9A-HJ-NP-Za-km-z]{32,44}\b"
 
+def get_token_info(ca):
+    """ Получает название токена, иконку и общее количество выпущенных токенов """
+    logger.info(f"🔍 Запрашиваем информацию о токене: {ca}")
+
+    url = f"https://pro-api.solscan.io/v2.0/token/meta?address={ca}"
+    
+    headers = {
+        "accept": "application/json",
+        "Content-Type": "application/json",
+        "token": SOLSCAN_API_KEY
+    }
+
+    try:
+        response = requests.get(url, headers=headers)
+        logger.info(f"🔄 Статус ответа Solscan: {response.status_code}")
+
+        if response.status_code != 200:
+            logger.error(f"❌ Ошибка Solscan API: {response.text}")
+            return {"error": "❌ Ошибка при запросе к Solscan API."}
+
+        data = response.json().get("data", {})
+        if not data:
+            logger.warning("⚠️ Нет информации о токене.")
+            return {"error": "⚠️ Нет информации о токене."}
+
+        token_info = {
+            "token_name": data.get("token_name", "Unknown"),
+            "token_symbol": data.get("token_symbol", "Unknown"),
+            "icon_url": data.get("icon_url", ""),
+            "total_supply": data.get("supply", 0)
+        }
+
+        logger.info(f"✅ Информация о токене получена: {token_info}")
+        return token_info
+
+    except requests.RequestException as e:
+        logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
+        return {"error": "❌ Ошибка соединения с Solscan API."}
+
 def get_token_first_transfers(ca):
     """ Получает первые 10 реальных транзакций токена (без минтинга) """
     logger.info(f"🔍 Запрашиваем первые транзакции (без минта) для токена: {ca}")
@@ -107,11 +146,17 @@ async def analyze_or_chat(body: RequestBody):
         ca = match.group(0)
         logger.info(f"📍 Найден контрактный адрес: {ca}")
 
+        # Получаем информацию о токене
+        token_info = get_token_info(ca)
+        if "error" in token_info:
+            return token_info
+
         # Запрашиваем первые 10 реальных транзакций токена (без минта)
         first_transfers = get_token_first_transfers(ca)
 
         return {
             "contract_address": ca,
+            "token_info": token_info,
             "first_transfers": first_transfers
         }
 
