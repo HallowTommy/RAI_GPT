@@ -47,16 +47,15 @@ system_message = (
 # Регулярное выражение для поиска Solana CA (Public Key)
 SOLANA_CA_PATTERN = r"\b[1-9A-HJ-NP-Za-km-z]{32,44}\b"
 
-def get_token_transfers(ca, sort_order="desc"):
-    """ Получает список транзакций токена через Solscan API (по умолчанию последние 100) """
-    logger.info(f"🔍 Запрашиваем транзакции для токена: {ca} (порядок: {sort_order})")
+def get_token_transfers(ca):
+    """ Получает список последних 100 транзакций токена через Solscan API """
+    logger.info(f"🔍 Запрашиваем последние транзакции для токена: {ca}")
 
     url = (
-        f"https://pro-api.solscan.io/v2.0/transaction/token?"
+        f"https://pro-api.solscan.io/v2.0/token/transfer?"
         f"address={ca}"
-        f"&page=1&page_size=100"
-        f"&sort_by=block_time"
-        f"&sort_order=asc"
+        f"&activity_type[]=ACTIVITY_SPL_TRANSFER"
+        f"&page=1&page_size=100&sort_by=block_time&sort_order=desc"
     )
 
     headers = {
@@ -78,7 +77,7 @@ def get_token_transfers(ca, sort_order="desc"):
             logger.warning("⚠️ Нет данных о транзакциях.")
             return {"error": "⚠️ Нет данных о транзакциях токена."}
 
-        # Формируем список транзакций
+        # Формируем список последних переводов
         transfers = []
         for tx in data:
             transfers.append({
