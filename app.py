@@ -158,18 +158,20 @@ def get_token_holders(ca):
             logger.error(f"❌ Ошибка Solscan API: {response.text}")
             return {"error": "❌ Ошибка при запросе к Solscan API."}
 
-        data = response.json()
+        response_json = response.json()
+        data = response_json.get("data", {})
+
         if not data or "items" not in data:
             logger.warning("⚠️ Нет данных о холдерах токена.")
-            return {"error": "⚠️ Нет данных о холдерах токена."}
+            return []
 
         holders = []
         for holder in data["items"]:
             holders.append({
-                "owner": holder["owner"],
-                "token_account": holder["address"],
-                "amount": holder["amount"],
-                "rank": holder["rank"]
+                "owner": holder.get("owner", "Unknown"),
+                "token_account": holder.get("address", "Unknown"),
+                "amount": holder.get("amount", 0),
+                "rank": holder.get("rank", "Unknown")
             })
 
         logger.info(f"✅ Получены {len(holders)} холдеров для токена {ca}")
@@ -177,7 +179,8 @@ def get_token_holders(ca):
 
     except requests.RequestException as e:
         logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
-        return {"error": "❌ Ошибка соединения с Solscan API."}
+        return []
+
 
 @app.post("/analyze")
 async def analyze_or_chat(body: RequestBody):
