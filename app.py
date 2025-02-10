@@ -36,7 +36,7 @@ app.add_middleware(
 class RequestBody(BaseModel):
     user_query: str
 
-# Регулярное выражение для поиска Solana CA
+# Регулярное выражение для поиска Solana CA (Public Key)
 SOLANA_CA_PATTERN = r"\b[1-9A-HJ-NP-Za-km-z]{32,44}\b"
 
 def get_token_info(ca):
@@ -49,22 +49,37 @@ def get_token_info(ca):
     try:
         response = requests.get(url, headers=headers)
         logger.info(f"🔄 Статус ответа (meta): {response.status_code}")
-        
+
         if response.status_code == 200:
             data = response.json().get("data", {})
             if data:
-                return {
+                token_info = {
                     "token_name": data.get("name", "Unknown"),
+                    "token_symbol": data.get("symbol", "Unknown"),
+                    "icon_url": data.get("icon", ""),
                     "total_supply": int(data.get("supply", 0)),
+                    "holders_count": data.get("holder", 0),
+                    "creator": data.get("creator", "Unknown"),
+                    "created_time": data.get("created_time", 0),
+                    "first_mint_tx": data.get("first_mint_tx", "Unknown"),
+                    "market_cap": data.get("market_cap", "Unknown"),
+                    "description": data.get("metadata", {}).get("description", ""),
+                    "website": data.get("metadata", {}).get("website", ""),
+                    "twitter": data.get("metadata", {}).get("twitter", "")
                 }
+                logger.info(f"✅ Информация о токене получена: {token_info}")
+                return token_info
+
+        logger.warning("⚠️ Нет информации о токене.")
         return {"error": "⚠️ Нет информации о токене."}
+
     except requests.RequestException as e:
         logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
         return {"error": "❌ Ошибка соединения с Solscan API."}
 
-def get_token_first_transfers(ca, total_supply):
-    """ Получает первые 20 реальных транзакций токена и считает % закупленного суплая """
-    logger.info(f"🔍 Запрашиваем первые 20 транзакций (без минта) для токена: {ca}")
+def get_supply_percentage(ca, total_supply):
+    """ Считает процент суплая, купленного за первые 20 транзакций """
+    logger.info(f"🔍 Анализируем процент закупленного суплая за первые 20 транзакций: {ca}")
 
     url = (
         f"https://pro-api.solscan.io/v2.0/token/transfer?"
@@ -80,19 +95,21 @@ def get_token_first_transfers(ca, total_supply):
         logger.info(f"🔄 Статус ответа Solscan: {response.status_code}")
 
         if response.status_code != 200:
+            logger.error(f"❌ Ошибка Solscan API: {response.text}")
             return {"error": "❌ Ошибка при запросе к Solscan API."}
 
         data = response.json().get("data", [])
         if not data:
-            return {"error": "⚠️ Нет данных о первых транзакциях."}
-        
-        # Подсчет закупленного суплая
-        total_bought = sum(tx.get("amount", 0) for tx in data)
-        supply_percentage = round((total_bought / total_supply) * 100, 4) if total_supply else 0
-        
-        logger.info(f"✅ Закуплено {supply_percentage}% от общего суплая за первые 20 транзакций")
-        return {"supply_bought_percent": supply_percentage}
-    
+            logger.warning("⚠️ Нет данных о первых транзакциях.")
+            return {"error": "⚠️ Нет данных о первых транзакциях токена."}
+
+        # Сумма токенов, переданных в первых 20 транзакциях
+        total_bought = sum(tx["amount"] for tx in data)
+        supply_percentage = (total_bought / total_supply) * 100 if total_supply > 0 else 0
+
+        logger.info(f"✅ Закуплено {supply_percentage:.2f}% от общего суплая в первых 20 транзакциях")
+        return round(supply_percentage, 2)
+
     except requests.RequestException as e:
         logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
         return {"error": "❌ Ошибка соединения с Solscan API."}
@@ -104,6 +121,7 @@ async def analyze_or_chat(body: RequestBody):
     logger.info("📩 Получен запрос: %s", user_query)
 
     match = re.search(SOLANA_CA_PATTERN, user_query)
+
     if match:
         ca = match.group(0)
         logger.info(f"📍 Найден контрактный адрес: {ca}")
@@ -113,14 +131,15 @@ async def analyze_or_chat(body: RequestBody):
         if "error" in token_info:
             return token_info
 
-        # Запрашиваем процент купленного суплая
-        supply_bought = get_token_first_transfers(ca, token_info["total_supply"])
+        # Рассчитываем процент купленного суплая за первые 20 транзакций
+        supply_percentage = get_supply_percentage(ca, token_info["total_supply"])
 
         return {
             "contract_address": ca,
             "token_info": token_info,
-            "supply_bought": supply_bought,
+            "first_20_transactions_supply_percentage": supply_percentage
         }
+
     else:
         return {"response": "❌ Запрос не содержит корректный CA токена."}
 
