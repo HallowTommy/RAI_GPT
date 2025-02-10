@@ -47,8 +47,99 @@ system_message = (
 # Регулярное выражение для поиска Solana CA (Public Key)
 SOLANA_CA_PATTERN = r"\b[1-9A-HJ-NP-Za-km-z]{32,44}\b"
 
+def get_token_info(ca):
+    """ Получает информацию о токене """
+    logger.info(f"🔍 Запрашиваем информацию о токене: {ca}")
+
+    url = f"https://pro-api.solscan.io/v2.0/token/meta?address={ca}"
+
+    headers = {
+        "accept": "application/json",
+        "Content-Type": "application/json",
+        "token": SOLSCAN_API_KEY
+    }
+
+    try:
+        response = requests.get(url, headers=headers)
+        logger.info(f"🔄 Статус ответа (meta): {response.status_code}")
+
+        if response.status_code == 200:
+            data = response.json().get("data", {})
+            if data:
+                token_info = {
+                    "token_name": data.get("name", "Unknown"),
+                    "token_symbol": data.get("symbol", "Unknown"),
+                    "icon_url": data.get("icon", ""),
+                    "total_supply": data.get("supply", "Unknown"),
+                    "holders_count": data.get("holder", 0),
+                    "creator": data.get("creator", "Unknown"),
+                    "created_time": data.get("created_time", 0),
+                    "first_mint_tx": data.get("first_mint_tx", "Unknown"),
+                    "market_cap": data.get("market_cap", "Unknown"),
+                    "description": data.get("metadata", {}).get("description", ""),
+                    "website": data.get("metadata", {}).get("website", ""),
+                    "twitter": data.get("metadata", {}).get("twitter", "")
+                }
+                logger.info(f"✅ Информация о токене получена: {token_info}")
+                return token_info
+
+        logger.warning("⚠️ Нет информации о токене.")
+        return {"error": "⚠️ Нет информации о токене."}
+
+    except requests.RequestException as e:
+        logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
+        return {"error": "❌ Ошибка соединения с Solscan API."}
+
+def get_token_first_transfers(ca):
+    """ Получает первые 10 реальных транзакций токена (без минтинга) """
+    logger.info(f"🔍 Запрашиваем первые транзакции (без минта) для токена: {ca}")
+
+    url = (
+        f"https://pro-api.solscan.io/v2.0/token/transfer?"
+        f"address={ca}"
+        f"&activity_type[]=ACTIVITY_SPL_TRANSFER"
+        f"&page=1&page_size=10&sort_by=block_time&sort_order=asc"
+    )
+
+    headers = {
+        "accept": "application/json",
+        "Content-Type": "application/json",
+        "token": SOLSCAN_API_KEY
+    }
+
+    try:
+        response = requests.get(url, headers=headers)
+        logger.info(f"🔄 Статус ответа Solscan: {response.status_code}")
+
+        if response.status_code != 200:
+            logger.error(f"❌ Ошибка Solscan API: {response.text}")
+            return {"error": "❌ Ошибка при запросе к Solscan API."}
+
+        data = response.json().get("data", [])
+        if not data:
+            logger.warning("⚠️ Нет данных о первых транзакциях.")
+            return {"error": "⚠️ Нет данных о первых транзакциях токена."}
+
+        first_transfers = []
+        for tx in data:
+            first_transfers.append({
+                "tx_id": tx["trans_id"],
+                "time": tx["time"],
+                "from": tx["from_address"],
+                "to": tx["to_address"],
+                "amount": tx["amount"],
+                "value": tx["value"]
+            })
+
+        logger.info(f"✅ Получены первые {len(first_transfers)} транзакции для токена {ca}")
+        return first_transfers
+
+    except requests.RequestException as e:
+        logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
+        return {"error": "❌ Ошибка соединения с Solscan API."}
+
 def get_token_holders(ca):
-    """ Получает список холдеров токена (максимум 40) """
+    """ Получает актуальный список холдеров токена """
     logger.info(f"🔍 Запрашиваем список холдеров для токена: {ca}")
 
     url = f"https://pro-api.solscan.io/v2.0/token/holders?address={ca}&page=1&page_size=40"
@@ -67,29 +158,19 @@ def get_token_holders(ca):
             logger.error(f"❌ Ошибка Solscan API: {response.text}")
             return {"error": "❌ Ошибка при запросе к Solscan API."}
 
-        data = response.json().get("data", {})
-
-        # 🛠️ Добавляем лог структуры данных перед обработкой
-        logger.info(f"🔍 Структура ответа (holders): {type(data)} - {data}")
-
-        # Проверяем, есть ли в data ключ "items" и является ли он списком
-        items = data.get("items", [])
-
-        if not isinstance(items, list) or not items:
-            logger.warning("⚠️ Нет данных о холдерах токена или некорректный формат данных.")
+        data = response.json()
+        if not data or "items" not in data:
+            logger.warning("⚠️ Нет данных о холдерах токена.")
             return {"error": "⚠️ Нет данных о холдерах токена."}
 
         holders = []
-        for holder in items:
-            if isinstance(holder, dict):  # Проверяем, является ли `holder` словарем
-                holders.append({
-                    "owner": holder.get("owner", "Unknown"),
-                    "token_account": holder.get("address", "Unknown"),
-                    "amount": holder.get("amount", "0"),
-                    "rank": holder.get("rank", "Unknown")
-                })
-            else:
-                logger.warning(f"⚠️ Неожиданный формат холдера: {holder}")
+        for holder in data["items"]:
+            holders.append({
+                "owner": holder["owner"],
+                "token_account": holder["address"],
+                "amount": holder["amount"],
+                "rank": holder["rank"]
+            })
 
         logger.info(f"✅ Получены {len(holders)} холдеров для токена {ca}")
         return holders
@@ -97,7 +178,6 @@ def get_token_holders(ca):
     except requests.RequestException as e:
         logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
         return {"error": "❌ Ошибка соединения с Solscan API."}
-
 
 @app.post("/analyze")
 async def analyze_or_chat(body: RequestBody):
@@ -111,47 +191,26 @@ async def analyze_or_chat(body: RequestBody):
         ca = match.group(0)
         logger.info(f"📍 Найден контрактный адрес: {ca}")
 
-        # Получаем список холдеров токена
+        # Получаем информацию о токене
+        token_info = get_token_info(ca)
+        if "error" in token_info:
+            return token_info
+
+        # Запрашиваем первые 10 реальных транзакций токена (без минта)
+        first_transfers = get_token_first_transfers(ca)
+
+        # Запрашиваем список холдеров токена
         holders = get_token_holders(ca)
 
         return {
             "contract_address": ca,
+            "token_info": token_info,
+            "first_transfers": first_transfers,
             "holders": holders
         }
 
     else:
-        # Обычный чат с ИИ
-        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
-        payload = {
-            "model": "gpt-4",
-            "messages": [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_query}
-            ],
-            "max_tokens": 150,
-            "temperature": 0.8
-        }
-
-        try:
-            response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-
-            if response.status_code != 200:
-                logger.error("Ошибка OpenAI API: %s", response.text)
-                return {"error": "❌ Ошибка OpenAI. Попробуйте позже."}
-
-            response_data = response.json()
-            answer = response_data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-
-            if not answer:
-                logger.error("OpenAI API вернул пустой ответ")
-                return {"error": "❌ OpenAI API не дал ответа. Попробуйте другой запрос."}
-
-            logger.info("Ответ от OpenAI: %s", answer)
-            return {"response": answer}
-
-        except Exception as e:
-            logger.error("Ошибка при запросе к OpenAI: %s", e)
-            return {"error": "❌ Ошибка сервера. Попробуйте позже."}
+        return {"response": "❌ Запрос не содержит корректный CA токена."}
 
 @app.get("/")
 async def root():
