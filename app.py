@@ -68,18 +68,26 @@ def get_token_holders(ca):
             return {"error": "❌ Ошибка при запросе к Solscan API."}
 
         data = response.json().get("data", [])
-        if not data:
-            logger.warning("⚠️ Нет данных о холдерах токена.")
+
+        # 🛠️ Добавляем лог структуры данных перед обработкой
+        logger.info(f"🔍 Структура ответа (holders): {type(data)} - {data[:5] if isinstance(data, list) else data}")
+
+        # Проверяем, является ли data списком
+        if not isinstance(data, list) or not data:
+            logger.warning("⚠️ Нет данных о холдерах токена или некорректный формат данных.")
             return {"error": "⚠️ Нет данных о холдерах токена."}
 
         holders = []
         for holder in data:
-            holders.append({
-                "owner": holder["owner"],
-                "token_account": holder["token_account"],
-                "amount": holder["amount"],
-                "value": holder["value"]
-            })
+            if isinstance(holder, dict):  # Проверяем, является ли `holder` словарем
+                holders.append({
+                    "owner": holder.get("owner", "Unknown"),
+                    "token_account": holder.get("token_account", "Unknown"),
+                    "amount": holder.get("amount", "0"),
+                    "value": holder.get("value", 0)
+                })
+            else:
+                logger.warning(f"⚠️ Неожиданный формат холдера: {holder}")
 
         logger.info(f"✅ Получены {len(holders)} холдеров для токена {ca}")
         return holders
