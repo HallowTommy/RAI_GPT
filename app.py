@@ -67,24 +67,26 @@ def get_token_holders(ca):
             logger.error(f"❌ Ошибка Solscan API: {response.text}")
             return {"error": "❌ Ошибка при запросе к Solscan API."}
 
-        data = response.json().get("data", [])
+        data = response.json().get("data", {})
 
         # 🛠️ Добавляем лог структуры данных перед обработкой
-        logger.info(f"🔍 Структура ответа (holders): {type(data)} - {data[:5] if isinstance(data, list) else data}")
+        logger.info(f"🔍 Структура ответа (holders): {type(data)} - {data}")
 
-        # Проверяем, является ли data списком
-        if not isinstance(data, list) or not data:
+        # Проверяем, есть ли в data ключ "items" и является ли он списком
+        items = data.get("items", [])
+
+        if not isinstance(items, list) or not items:
             logger.warning("⚠️ Нет данных о холдерах токена или некорректный формат данных.")
             return {"error": "⚠️ Нет данных о холдерах токена."}
 
         holders = []
-        for holder in data:
+        for holder in items:
             if isinstance(holder, dict):  # Проверяем, является ли `holder` словарем
                 holders.append({
                     "owner": holder.get("owner", "Unknown"),
-                    "token_account": holder.get("token_account", "Unknown"),
+                    "token_account": holder.get("address", "Unknown"),
                     "amount": holder.get("amount", "0"),
-                    "value": holder.get("value", 0)
+                    "rank": holder.get("rank", "Unknown")
                 })
             else:
                 logger.warning(f"⚠️ Неожиданный формат холдера: {holder}")
@@ -95,6 +97,7 @@ def get_token_holders(ca):
     except requests.RequestException as e:
         logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
         return {"error": "❌ Ошибка соединения с Solscan API."}
+
 
 @app.post("/analyze")
 async def analyze_or_chat(body: RequestBody):
