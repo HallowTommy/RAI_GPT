@@ -71,35 +71,34 @@ def get_token_info(ca):
         if response.status_code == 200:
             data = response.json().get("data", {})
             if data:
-                original_total_supply = int(data.get("supply", 0))  # Оригинальное число
-                formatted_total_supply = format_number(original_total_supply)  # Читаемый формат
+                total_supply = int(data.get("supply", 0))  # Чистое число
+                market_cap = float(data.get("market_cap", 0))  # Преобразуем Market Cap к float
 
                 token_info = {
                     "token_name": data.get("name", "Unknown"),
                     "token_symbol": data.get("symbol", "Unknown"),
                     "icon_url": data.get("icon", ""),
-                    "total_supply": formatted_total_supply,
-                    "original_total_supply": original_total_supply,  # Добавляем для расчетов
+                    "total_supply": format_number(total_supply),  # Форматируем в читабельный вид
                     "holders_count": data.get("holder", 0),
                     "creator": data.get("creator", "Unknown"),
                     "created_time": format_timestamp(data.get("created_time", 0)),
                     "first_mint_tx": data.get("first_mint_tx", "Unknown"),
-                    "market_cap": format_number(float(data.get("market_cap", 0))),
+                    "market_cap": format_number(market_cap),  # Форматируем Market Cap
                     "description": data.get("metadata", {}).get("description", ""),
                     "website": data.get("metadata", {}).get("website", ""),
                     "twitter": data.get("metadata", {}).get("twitter", "")
                 }
                 logger.info(f"✅ Информация о токене получена: {token_info}")
-                return token_info
+                return token_info, total_supply  # Возвращаем total_supply отдельно для расчетов
 
         logger.warning("⚠️ Нет информации о токене.")
-        return {"error": "⚠️ Нет информации о токене."}
+        return {"error": "⚠️ Нет информации о токене."}, 0
 
     except requests.RequestException as e:
         logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
-        return {"error": "❌ Ошибка соединения с Solscan API."}
+        return {"error": "❌ Ошибка соединения с Solscan API."}, 0
 
-def get_supply_percentage(ca, original_total_supply):
+def get_supply_percentage(ca, total_supply):
     """ Считает процент суплая, купленного за первые 20 транзакций """
     logger.info(f"🔍 Анализируем процент закупленного суплая за первые 20 транзакций: {ca}")
 
@@ -126,7 +125,7 @@ def get_supply_percentage(ca, original_total_supply):
             return {"error": "⚠️ Нет данных о первых транзакциях токена."}
 
         total_bought = sum(tx["amount"] for tx in data)
-        supply_percentage = (total_bought / original_total_supply) * 100 if original_total_supply > 0 else 0
+        supply_percentage = (total_bought / total_supply) * 100 if total_supply > 0 else 0
 
         logger.info(f"✅ Закуплено {supply_percentage:.2f}% от общего суплая в первых 20 транзакциях")
         return round(supply_percentage, 2)
@@ -147,11 +146,11 @@ async def analyze_or_chat(body: RequestBody):
         ca = match.group(0)
         logger.info(f"📍 Найден контрактный адрес: {ca}")
 
-        token_info = get_token_info(ca)
+        token_info, total_supply = get_token_info(ca)
         if "error" in token_info:
             return token_info
 
-        supply_percentage = get_supply_percentage(ca, token_info["original_total_supply"])
+        supply_percentage = get_supply_percentage(ca, total_supply)
 
         return {
             "contract_address": ca,
