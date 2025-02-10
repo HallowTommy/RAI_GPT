@@ -48,10 +48,10 @@ system_message = (
 SOLANA_CA_PATTERN = r"\b[1-9A-HJ-NP-Za-km-z]{32,44}\b"
 
 def get_token_holders(ca):
-    """ Получает топ-100 холдеров токена """
+    """ Получает список холдеров токена (максимум 40) """
     logger.info(f"🔍 Запрашиваем список холдеров для токена: {ca}")
 
-    url = f"https://pro-api.solscan.io/v2.0/token/holders?address={ca}&page=1&page_size=100"
+    url = f"https://pro-api.solscan.io/v2.0/token/holders?address={ca}&page=1&page_size=40"
 
     headers = {
         "accept": "application/json",
