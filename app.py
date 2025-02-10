@@ -47,60 +47,11 @@ system_message = (
 # Регулярное выражение для поиска Solana CA (Public Key)
 SOLANA_CA_PATTERN = r"\b[1-9A-HJ-NP-Za-km-z]{32,44}\b"
 
-def get_token_info(ca):
-    """ Получает название токена, иконку, общее количество выпущенных токенов и доп. инфо """
-    logger.info(f"🔍 Запрашиваем информацию о токене: {ca}")
+def get_token_holders(ca):
+    """ Получает топ-100 холдеров токена """
+    logger.info(f"🔍 Запрашиваем список холдеров для токена: {ca}")
 
-    url = f"https://pro-api.solscan.io/v2.0/token/meta?address={ca}"
-
-    headers = {
-        "accept": "application/json",
-        "Content-Type": "application/json",
-        "token": SOLSCAN_API_KEY
-    }
-
-    try:
-        response = requests.get(url, headers=headers)
-        logger.info(f"🔄 Статус ответа (meta): {response.status_code}")
-
-        if response.status_code == 200:
-            data = response.json().get("data", {})
-            if data:
-                token_info = {
-                    "token_name": data.get("name", "Unknown"),
-                    "token_symbol": data.get("symbol", "Unknown"),
-                    "icon_url": data.get("icon", ""),
-                    "total_supply": data.get("supply", "Unknown"),
-                    "holders_count": data.get("holder", 0),
-                    "creator": data.get("creator", "Unknown"),
-                    "created_time": data.get("created_time", 0),
-                    "first_mint_tx": data.get("first_mint_tx", "Unknown"),
-                    "market_cap": data.get("market_cap", "Unknown"),
-                    "description": data.get("metadata", {}).get("description", ""),
-                    "website": data.get("metadata", {}).get("website", ""),
-                    "twitter": data.get("metadata", {}).get("twitter", "")
-                }
-                logger.info(f"✅ Информация о токене получена: {token_info}")
-                return token_info
-
-        logger.warning("⚠️ Нет информации о токене.")
-        return {"error": "⚠️ Нет информации о токене."}
-
-    except requests.RequestException as e:
-        logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
-        return {"error": "❌ Ошибка соединения с Solscan API."}
-
-
-def get_token_first_transfers(ca):
-    """ Получает первые 10 реальных транзакций токена (без минтинга) """
-    logger.info(f"🔍 Запрашиваем первые транзакции (без минта) для токена: {ca}")
-
-    url = (
-        f"https://pro-api.solscan.io/v2.0/token/transfer?"
-        f"address={ca}"
-        f"&activity_type[]=ACTIVITY_SPL_TRANSFER"
-        f"&page=1&page_size=10&sort_by=block_time&sort_order=asc"
-    )
+    url = f"https://pro-api.solscan.io/v2.0/token/holders?address={ca}&page=1&page_size=100"
 
     headers = {
         "accept": "application/json",
@@ -110,7 +61,7 @@ def get_token_first_transfers(ca):
 
     try:
         response = requests.get(url, headers=headers)
-        logger.info(f"🔄 Статус ответа Solscan: {response.status_code}")
+        logger.info(f"🔄 Статус ответа Solscan (holders): {response.status_code}")
 
         if response.status_code != 200:
             logger.error(f"❌ Ошибка Solscan API: {response.text}")
@@ -118,22 +69,20 @@ def get_token_first_transfers(ca):
 
         data = response.json().get("data", [])
         if not data:
-            logger.warning("⚠️ Нет данных о первых транзакциях.")
-            return {"error": "⚠️ Нет данных о первых транзакциях токена."}
+            logger.warning("⚠️ Нет данных о холдерах токена.")
+            return {"error": "⚠️ Нет данных о холдерах токена."}
 
-        first_transfers = []
-        for tx in data:
-            first_transfers.append({
-                "tx_id": tx["trans_id"],
-                "time": tx["time"],
-                "from": tx["from_address"],
-                "to": tx["to_address"],
-                "amount": tx["amount"],
-                "value": tx["value"]
+        holders = []
+        for holder in data:
+            holders.append({
+                "owner": holder["owner"],
+                "token_account": holder["token_account"],
+                "amount": holder["amount"],
+                "value": holder["value"]
             })
 
-        logger.info(f"✅ Получены первые {len(first_transfers)} транзакции для токена {ca}")
-        return first_transfers
+        logger.info(f"✅ Получены {len(holders)} холдеров для токена {ca}")
+        return holders
 
     except requests.RequestException as e:
         logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
@@ -151,18 +100,12 @@ async def analyze_or_chat(body: RequestBody):
         ca = match.group(0)
         logger.info(f"📍 Найден контрактный адрес: {ca}")
 
-        # Получаем информацию о токене
-        token_info = get_token_info(ca)
-        if "error" in token_info:
-            return token_info
-
-        # Запрашиваем первые 10 реальных транзакций токена (без минта)
-        first_transfers = get_token_first_transfers(ca)
+        # Получаем список холдеров токена
+        holders = get_token_holders(ca)
 
         return {
             "contract_address": ca,
-            "token_info": token_info,
-            "first_transfers": first_transfers
+            "holders": holders
         }
 
     else:
