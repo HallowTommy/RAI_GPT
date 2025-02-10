@@ -71,11 +71,15 @@ def get_token_info(ca):
         if response.status_code == 200:
             data = response.json().get("data", {})
             if data:
+                original_total_supply = int(data.get("supply", 0))  # Оригинальное число
+                formatted_total_supply = format_number(original_total_supply)  # Читаемый формат
+
                 token_info = {
                     "token_name": data.get("name", "Unknown"),
                     "token_symbol": data.get("symbol", "Unknown"),
                     "icon_url": data.get("icon", ""),
-                    "total_supply": format_number(int(data.get("supply", 0))),
+                    "total_supply": formatted_total_supply,
+                    "original_total_supply": original_total_supply,  # Добавляем для расчетов
                     "holders_count": data.get("holder", 0),
                     "creator": data.get("creator", "Unknown"),
                     "created_time": format_timestamp(data.get("created_time", 0)),
@@ -95,7 +99,7 @@ def get_token_info(ca):
         logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
         return {"error": "❌ Ошибка соединения с Solscan API."}
 
-def get_supply_percentage(ca, total_supply):
+def get_supply_percentage(ca, original_total_supply):
     """ Считает процент суплая, купленного за первые 20 транзакций """
     logger.info(f"🔍 Анализируем процент закупленного суплая за первые 20 транзакций: {ca}")
 
@@ -122,7 +126,7 @@ def get_supply_percentage(ca, total_supply):
             return {"error": "⚠️ Нет данных о первых транзакциях токена."}
 
         total_bought = sum(tx["amount"] for tx in data)
-        supply_percentage = (total_bought / int(total_supply.replace("K", "000").replace("M", "000000").replace("B", "000000000").replace("T", "000000000000"))) * 100 if total_supply else 0
+        supply_percentage = (total_bought / original_total_supply) * 100 if original_total_supply > 0 else 0
 
         logger.info(f"✅ Закуплено {supply_percentage:.2f}% от общего суплая в первых 20 транзакциях")
         return round(supply_percentage, 2)
@@ -147,7 +151,7 @@ async def analyze_or_chat(body: RequestBody):
         if "error" in token_info:
             return token_info
 
-        supply_percentage = get_supply_percentage(ca, token_info["total_supply"])
+        supply_percentage = get_supply_percentage(ca, token_info["original_total_supply"])
 
         return {
             "contract_address": ca,
