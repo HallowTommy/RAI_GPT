@@ -129,6 +129,19 @@ def get_supply_percentage(ca, total_supply):
         logger.error(f"❌ Solscan API request error: {e}")
         return 0
 
+def categorize_token(supply_percentage):
+    """ Categorizes token based on buy-in percentage """
+    if supply_percentage < 10:
+        return "🔥 Strong potential for a pump if there's marketing & Twitter activity."
+    elif 10 <= supply_percentage < 20:
+        return "⚠️ Decent token, but could be a quick rug if there's no marketing strategy."
+    elif 20 <= supply_percentage < 40:
+        return "🚨 High-risk token! Only worth investing if the team is strong & experienced."
+    elif 40 <= supply_percentage < 60:
+        return "❌ Very high-risk! Buy only on a pump & exit fast."
+    else:
+        return "💀 Likely a scam. Too much supply is held by insiders."
+
 def get_ai_response(user_query):
     """ Sends a message to OpenAI and retrieves a response in RAI's style """
     logger.info("📩 Sending message to OpenAI: %s", user_query)
@@ -171,22 +184,8 @@ async def analyze_or_chat(body: RequestBody):
             return {"response": "❌ Error analyzing token."}
 
         supply_percentage = get_supply_percentage(ca, total_supply)
+        risk_assessment = categorize_token(supply_percentage)
 
-        # Send token analysis data along with an AI comment
-        analysis_message = (
-            f"📊 **Token Analysis:** {token_info['token_name']} ($ {token_info['token_symbol']})\n"
-            f"💰 **Market Cap:** {token_info['market_cap']}\n"
-            f"🔄 **Total Supply:** {token_info['total_supply']}\n"
-            f"👥 **Holders:** {token_info['holders_count']}\n"
-            f"📅 **Created On:** {token_info['created_time']}\n"
-            f"🛠 **Creator:** {token_info['creator']}\n"
-            f"🔗 **First Mint TX:** {token_info['first_mint_tx']}\n"
-            f"📊 **First 20 TX Supply Bought:** {supply_percentage}%\n"
-            f"🌐 **Website:** {token_info['website']}\n"
-            f"🐦 **Twitter:** {token_info['twitter']}\n"
-        )
-
-        ai_comment = get_ai_response(f"Analyze token {token_info['token_name']}: {supply_percentage}% supply bought at launch.")
-        return {"response": analysis_message + "\n📢 **RAI Says:** " + ai_comment["response"]}
+        return {"response": f"{token_info['token_name']} ($ {token_info['token_symbol']}) - {risk_assessment}\n🌐 {token_info['website']}\n🐦 {token_info['twitter']}"}
 
     return get_ai_response(user_query)
