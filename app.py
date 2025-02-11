@@ -186,4 +186,6 @@ async def analyze_or_chat(body: RequestBody):
         if not token_info:
             return {"response": "❌ Error analyzing token."}
 
+        return get_ai_response(f"Analyze token: {token_info}")
+
     return get_ai_response(user_query)
