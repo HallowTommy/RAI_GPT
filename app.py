@@ -129,6 +129,35 @@ def get_supply_percentage(ca, total_supply):
         logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
         return 0
 
+def get_ai_response(user_query):
+    """ Отправляет сообщение в OpenAI и получает ответ в стиле RAI """
+    logger.info("📩 Отправляем сообщение в OpenAI: %s", user_query)
+
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+    payload = {
+        "model": "gpt-4",
+        "messages": [
+            {"role": "system", "content": "Ты RAI – крипто-аналитик с мемным стилем. Общайся как опытный трейдер."},
+            {"role": "user", "content": user_query}
+        ],
+        "max_tokens": 150,
+        "temperature": 0.8
+    }
+
+    try:
+        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+
+        if response.status_code != 200:
+            logger.error("Ошибка OpenAI API: %s", response.text)
+            return {"response": "❌ Ошибка OpenAI. Попробуйте позже."}
+
+        response_data = response.json()
+        return {"response": response_data["choices"][0]["message"]["content"].strip()}
+
+    except Exception as e:
+        logger.error("Ошибка при запросе к OpenAI: %s", e)
+        return {"response": "❌ Ошибка сервера. Попробуйте позже."}
+
 @app.post("/analyze")
 async def analyze_or_chat(body: RequestBody):
     """ Анализ токена или чат с RAI """
@@ -139,15 +168,9 @@ async def analyze_or_chat(body: RequestBody):
         ca = match.group(0)
         token_info, total_supply = get_token_info(ca)
         if not token_info:
-            return {"response": "❌ Ошибка при анализе токена. Проверьте правильность CA."}
+            return {"response": "❌ Ошибка при анализе токена."}
 
         supply_percentage = get_supply_percentage(ca, total_supply)
+        return get_ai_response(f"Анализ токена {token_info['token_name']}: {supply_percentage}% закуплено на старте.")
 
-        ai_comment = f"📢 **RAI говорит:** \"Ну, что я скажу… {supply_percentage}% токенов выкупили на старте – или это хомяки налетели, или инсайдеры набивают карманы. Холдеров пока немного, но если маркетинг пойдет – может взлететь. Держи руку на пульсе!\""
-
-        return {
-            "response": f"🔍 **Токен:** {token_info['token_name']} (${token_info['token_symbol']})\n"
-                        f"📊 **Первые 20 транзакций закупили:** {supply_percentage}% от суплая\n\n{ai_comment}"
-        }
-
-    return {"response": "🚀 Дружище, чего хочешь? Мемкоины, инсайды, или просто рынок пообсуждать?"}
+    return get_ai_response(user_query)
