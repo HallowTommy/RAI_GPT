@@ -207,6 +207,22 @@ async def analyze_or_chat(body: RequestBody):
         if not token_info:
             return {"response": "❌ Error analyzing token."}
 
-        return get_ai_response(f"Analyze token: {token_info}")
+        # Calculate supply percentage
+        supply_percentage = get_supply_percentage(ca, total_supply)
+
+        # Create a structured analysis prompt
+        analysis_prompt = (
+            f"Analyze the token:\n"
+            f"Name: {token_info['token_name']} ({token_info['token_symbol']})\n"
+            f"Market Cap: {token_info['market_cap']}\n"
+            f"Total Supply: {token_info['total_supply']}\n"
+            f"Holders: {token_info['holders_count']}\n"
+            f"Created: {token_info['created_time']}\n"
+            f"Supply Purchase Category: {supply_percentage}%\n"
+            f"Website: {token_info['website']}\n"
+            f"Twitter: {token_info['twitter']}\n"
+        )
+
+        return get_ai_response(analysis_prompt)
 
     return get_ai_response(user_query)
