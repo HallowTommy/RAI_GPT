@@ -71,25 +71,25 @@ def get_token_info(ca):
         if response.status_code == 200:
             data = response.json().get("data", {})
             if data:
-                total_supply = int(data.get("supply", 0))  # Чистое число
-                market_cap = float(data.get("market_cap", 0))  # Преобразуем Market Cap к float
+                total_supply = int(data.get("supply", 0))
+                market_cap = float(data.get("market_cap", 0))
 
                 token_info = {
                     "token_name": data.get("name", "Unknown"),
                     "token_symbol": data.get("symbol", "Unknown"),
                     "icon_url": data.get("icon", ""),
-                    "total_supply": format_number(total_supply),  # Форматируем в читабельный вид
+                    "total_supply": format_number(total_supply),
                     "holders_count": data.get("holder", 0),
                     "creator": data.get("creator", "Unknown"),
                     "created_time": format_timestamp(data.get("created_time", 0)),
                     "first_mint_tx": data.get("first_mint_tx", "Unknown"),
-                    "market_cap": format_number(market_cap),  # Форматируем Market Cap
+                    "market_cap": format_number(market_cap),
                     "description": data.get("metadata", {}).get("description", ""),
                     "website": data.get("metadata", {}).get("website", ""),
                     "twitter": data.get("metadata", {}).get("twitter", "")
                 }
                 logger.info(f"✅ Информация о токене получена: {token_info}")
-                return token_info, total_supply  # Возвращаем total_supply отдельно для расчетов
+                return token_info, total_supply
 
         logger.warning("⚠️ Нет информации о токене.")
         return {"error": "⚠️ Нет информации о токене."}, 0
@@ -102,12 +102,7 @@ def get_supply_percentage(ca, total_supply):
     """ Считает процент суплая, купленного за первые 20 транзакций """
     logger.info(f"🔍 Анализируем процент закупленного суплая за первые 20 транзакций: {ca}")
 
-    url = (
-        f"https://pro-api.solscan.io/v2.0/token/transfer?"
-        f"address={ca}"
-        f"&activity_type[]=ACTIVITY_SPL_TRANSFER"
-        f"&page=1&page_size=20&sort_by=block_time&sort_order=asc"
-    )
+    url = f"https://pro-api.solscan.io/v2.0/token/transfer?address={ca}&activity_type[]=ACTIVITY_SPL_TRANSFER&page=1&page_size=20&sort_by=block_time&sort_order=asc"
 
     headers = {"accept": "application/json", "Content-Type": "application/json", "token": SOLSCAN_API_KEY}
 
@@ -117,12 +112,12 @@ def get_supply_percentage(ca, total_supply):
 
         if response.status_code != 200:
             logger.error(f"❌ Ошибка Solscan API: {response.text}")
-            return {"error": "❌ Ошибка при запросе к Solscan API."}
+            return 0
 
         data = response.json().get("data", [])
         if not data:
             logger.warning("⚠️ Нет данных о первых транзакциях.")
-            return {"error": "⚠️ Нет данных о первых транзакциях токена."}
+            return 0
 
         total_bought = sum(tx["amount"] for tx in data)
         supply_percentage = (total_bought / total_supply) * 100 if total_supply > 0 else 0
@@ -132,39 +127,7 @@ def get_supply_percentage(ca, total_supply):
 
     except requests.RequestException as e:
         logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
-        return {"error": "❌ Ошибка соединения с Solscan API."}
-
-def get_ai_response(user_query):
-    """ Отправляет сообщение в OpenAI и получает ответ в стиле RAI """
-    logger.info("📩 Отправляем сообщение в OpenAI: %s", user_query)
-
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
-    payload = {
-        "model": "gpt-4",
-        "messages": [
-            {"role": "system", "content": "Ты RAI – крипто-аналитик с сарказмом. Отвечай как бывалый трейдер, мемный эксперт, профи инсайдерских сливов. Все про мемкоины и рынок."},
-            {"role": "user", "content": user_query}
-        ],
-        "max_tokens": 150,
-        "temperature": 0.8
-    }
-
-    try:
-        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-
-        if response.status_code != 200:
-            logger.error("Ошибка OpenAI API: %s", response.text)
-            return {"error": "❌ Ошибка OpenAI. Попробуйте позже."}
-
-        response_data = response.json()
-        answer = response_data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-
-        logger.info("Ответ от OpenAI: %s", answer)
-        return {"response": answer}
-
-    except Exception as e:
-        logger.error("Ошибка при запросе к OpenAI: %s", e)
-        return {"error": "❌ Ошибка сервера. Попробуйте позже."}
+        return 0
 
 @app.post("/analyze")
 async def analyze_or_chat(body: RequestBody):
@@ -179,6 +142,20 @@ async def analyze_or_chat(body: RequestBody):
             return token_info
 
         supply_percentage = get_supply_percentage(ca, total_supply)
-        return {"contract_address": ca, "token_info": token_info, "first_20_transactions_supply_percentage": supply_percentage}
-    
-    return get_ai_response(user_query)
+
+        response_text = (
+            f"🔍 **Токен:** {token_info['token_name']} (${token_info['token_symbol']})\n"
+            f"📈 **Капитализация:** {token_info['market_cap']}\n"
+            f"💰 **Суплай:** {token_info['total_supply']}\n"
+            f"👥 **Холдеров:** {token_info['holders_count']}\n"
+            f"🛠 **Создатель:** {token_info['creator']}\n"
+            f"📅 **Создан:** {token_info['created_time']}\n"
+            f"🔗 **Первый минт:** {token_info['first_mint_tx'][:20]}...\n"
+            f"📊 **Первые 20 транзакций закупили:** {supply_percentage}% от суплая\n"
+            f"🌐 **Веб-сайт:** {token_info['website'] or 'Нет данных'}\n"
+            f"🐦 **Твиттер:** {token_info['twitter'] or 'Нет данных'}"
+        )
+
+        return {"response": response_text}
+
+    return {"response": "❌ Запрос не содержит корректный CA токена."}
