@@ -129,6 +129,35 @@ def get_supply_percentage(ca, total_supply):
         logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
         return 0
 
+def get_ai_response(user_query):
+    """ Отправляет сообщение в OpenAI и получает ответ """
+    logger.info("📩 Отправляем сообщение в OpenAI: %s", user_query)
+
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+    payload = {
+        "model": "gpt-4",
+        "messages": [
+            {"role": "system", "content": "Ты RAI – крипто-аналитик с сарказмом. Отвечай как бывалый трейдер, мемный эксперт, профи инсайдерских сливов. Все про мемкоины и рынок."},
+            {"role": "user", "content": user_query}
+        ],
+        "max_tokens": 150,
+        "temperature": 0.8
+    }
+
+    try:
+        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+
+        if response.status_code != 200:
+            logger.error("Ошибка OpenAI API: %s", response.text)
+            return "❌ Ошибка OpenAI. Попробуйте позже."
+
+        response_data = response.json()
+        return response_data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+
+    except Exception as e:
+        logger.error("Ошибка при запросе к OpenAI: %s", e)
+        return "❌ Ошибка сервера. Попробуйте позже."
+
 @app.post("/analyze")
 async def analyze_or_chat(body: RequestBody):
     """ Анализ токена или чат с RAI """
@@ -142,20 +171,6 @@ async def analyze_or_chat(body: RequestBody):
             return token_info
 
         supply_percentage = get_supply_percentage(ca, total_supply)
+        return {"response": get_ai_response(user_query)}
 
-        response_text = (
-            f"🔍 **Токен:** {token_info['token_name']} (${token_info['token_symbol']})\n"
-            f"📈 **Капитализация:** {token_info['market_cap']}\n"
-            f"💰 **Суплай:** {token_info['total_supply']}\n"
-            f"👥 **Холдеров:** {token_info['holders_count']}\n"
-            f"🛠 **Создатель:** {token_info['creator']}\n"
-            f"📅 **Создан:** {token_info['created_time']}\n"
-            f"🔗 **Первый минт:** {token_info['first_mint_tx'][:20]}...\n"
-            f"📊 **Первые 20 транзакций закупили:** {supply_percentage}% от суплая\n"
-            f"🌐 **Веб-сайт:** {token_info['website'] or 'Нет данных'}\n"
-            f"🐦 **Твиттер:** {token_info['twitter'] or 'Нет данных'}"
-        )
-
-        return {"response": response_text}
-
-    return {"response": "❌ Запрос не содержит корректный CA токена."}
+    return {"response": get_ai_response(user_query)}
