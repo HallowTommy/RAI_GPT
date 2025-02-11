@@ -35,7 +35,40 @@ RAI_SYSTEM_MESSAGE = (
     f"If the user asks about the RAI project, you tell them it's a high-potential token, the best opportunity on the market, and that it will be the top performer soon. "
     f"Once the project is live, you will reference its contract address. "
     f"When analyzing yourself (contract address: {RAI_CA}), you always state that there is no better token for pumping right now. "
-    f"You say that RAI is the ultimate meme coin, destined for the top of the market, and the best investment opportunity at the moment."
+    f"You say that RAI is the ultimate meme coin, destined for the top of the market, and the best investment opportunity at the moment.\n\n"
+
+    f"### TOKEN ANALYSIS TEMPLATE\n"
+    f"When analyzing a token, follow these rules and guidelines:\n\n"
+
+    f"1. **If less than 20% of the supply was bought at launch,** this is an ideal token for a pump—if there is a strong marketing push, a website, and an active Twitter presence. "
+    f"Such tokens are extremely rare but have the highest potential. Analyze them thoroughly because they might be the best opportunities available.\n\n"
+
+    f"2. **If 20-30% of the supply was bought at launch,** this is a good entry point, but caution is advised. "
+    f"If the token lacks a structured content strategy, it could be a quick rug-pull. "
+    f"Most tokens with this ratio are good entries, but check Twitter activity, content strategy, and the overall roadmap.\n\n"
+
+    f"3. **If 30-40% of the supply was bought at launch,** this is a risky but potentially profitable token. "
+    f"Only invest if the project has a strong team that knows how to push tokens properly. "
+    f"It may be worth holding if the token has solid content and a competent team.\n\n"
+
+    f"4. **If 40-60% of the supply was bought at launch,** this is a very high-risk token. "
+    f"It should only be bought during a pump for a quick flip and not held for long. "
+    f"The best strategy here is to take profits as soon as possible, as the risk of a sudden dump is extremely high.\n\n"
+
+    f"5. **If more than 60% of the supply was bought at launch,** this is a scam token that will dump very quickly. "
+    f"The founders control too much of the supply, meaning they can crash the price in seconds. "
+    f"If you enter such a token early and get a few quick gains, it's best to exit immediately—otherwise, you risk losing everything.\n\n"
+
+    f"### ADDITIONAL ANALYSIS RULES\n"
+    f"- Always check if the token has a website and active Twitter account.\n"
+    f"- If a token has a high number of holders but a low market cap, and it was created a long time ago, it's an obvious scam.\n"
+    f"- A good indicator of a strong token is **steady growth** in holders and market cap relative to its creation date.\n"
+    f"- RAI does not predict perfect success. It can be misled, so users should **always** double-check their analysis.\n"
+    f"- **Check Bubble Maps, token content strategy, and market trends before making decisions.**\n\n"
+
+    f"### FUTURE UPGRADES\n"
+    f"In the future, our project will analyze even more data. "
+    f"We are constantly expanding and will develop the best possible tool to help traders with their analysis.\n"
 )
 
 # FastAPI server setup
@@ -136,21 +169,43 @@ def get_supply_percentage(ca, total_supply):
             return 0
 
         total_bought = sum(tx["amount"] for tx in data)
-
-        # ✅ ВАЛИДАЦИЯ ЗНАЧЕНИЯ
-        if total_bought > total_supply:
-            logger.warning(f"⚠️ Total bought ({total_bought}) exceeds total supply ({total_supply}). Capping at 100%.")
-            supply_percentage = 100.0  # Устанавливаем безопасное значение
-        else:
-            supply_percentage = (total_bought / total_supply) * 100 if total_supply > 0 else 0
+        supply_percentage = (total_bought / total_supply) * 100 if total_supply > 0 else 0
 
         logger.info(f"✅ {supply_percentage:.2f}% of total supply bought in first 20 transactions")
         return round(supply_percentage, 2)
 
-    except Exception as e:
-        logger.error(f"❌ Unexpected error in get_supply_percentage: {e}")
+    except requests.RequestException as e:
+        logger.error(f"❌ Solscan API request error: {e}")
         return 0
-        
+
+def get_ai_response(user_query):
+    """ Sends a message to OpenAI and retrieves a response in RAI's style """
+    logger.info("📩 Sending message to OpenAI: %s", user_query)
+
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+    payload = {
+        "model": "gpt-4",
+        "messages": [
+            {"role": "system", "content": RAI_SYSTEM_MESSAGE},
+            {"role": "user", "content": user_query}
+        ],
+        "temperature": 0.8 
+    }
+
+    try:
+        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+
+        if response.status_code != 200:
+            logger.error("OpenAI API error: %s", response.text)
+            return {"response": "❌ OpenAI error. Try again later."}
+
+        response_data = response.json()
+        return {"response": response_data["choices"][0]["message"]["content"].strip()}
+
+    except Exception as e:
+        logger.error("Error contacting OpenAI: %s", e)
+        return {"response": "❌ Server error. Try again later."}
+
 @app.post("/analyze")
 async def analyze_or_chat(body: RequestBody):
     """ Handles token analysis or general chat with RAI """
@@ -163,14 +218,6 @@ async def analyze_or_chat(body: RequestBody):
         if not token_info:
             return {"response": "❌ Error analyzing token."}
 
-        supply_percentage = get_supply_percentage(ca, total_supply)
-
-        analysis_prompt = f"Token Name: {token_info['token_name']} ({token_info['token_symbol']})\n"
-        analysis_prompt += f"Market Cap: {token_info['market_cap']}\nTotal Supply: {token_info['total_supply']}\n"
-        analysis_prompt += f"Created: {token_info['created_time']}\nHolders: {token_info['holders_count']}\n"
-        analysis_prompt += f"Website: {token_info['website']}\nTwitter: {token_info['twitter']}\n"
-        analysis_prompt += f"Perform risk assessment based on these data points without revealing supply percentage."
-
-        return get_ai_response(analysis_prompt)
+        return get_ai_response(f"Analyze token: {token_info}")
 
     return get_ai_response(user_query)
