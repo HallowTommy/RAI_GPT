@@ -135,14 +135,14 @@ def get_supply_percentage(ca, total_supply):
         return {"error": "❌ Ошибка соединения с Solscan API."}
 
 def get_ai_response(user_query):
-    """ Отправляет сообщение в OpenAI и получает ответ """
+    """ Отправляет сообщение в OpenAI и получает ответ в стиле RAI """
     logger.info("📩 Отправляем сообщение в OpenAI: %s", user_query)
 
     headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
     payload = {
         "model": "gpt-4",
         "messages": [
-            {"role": "system", "content": "You are RAI, an AI specialized in meme coin analysis. Stay focused on crypto."},
+            {"role": "system", "content": "Ты RAI – крипто-аналитик с сарказмом. Отвечай как бывалый трейдер, мемный эксперт, профи инсайдерских сливов. Все про мемкоины и рынок."},
             {"role": "user", "content": user_query}
         ],
         "max_tokens": 150,
@@ -168,31 +168,17 @@ def get_ai_response(user_query):
 
 @app.post("/analyze")
 async def analyze_or_chat(body: RequestBody):
-    """ Определяет тип запроса: анализ токена или чат с AI """
+    """ Анализ токена или чат с RAI """
     user_query = body.user_query.strip()
-    logger.info("📩 Получен запрос: %s", user_query)
-
     match = re.search(SOLANA_CA_PATTERN, user_query)
 
     if match:
         ca = match.group(0)
-        logger.info(f"📍 Найден контрактный адрес: {ca}")
-
         token_info, total_supply = get_token_info(ca)
         if "error" in token_info:
             return token_info
 
         supply_percentage = get_supply_percentage(ca, total_supply)
-
-        return {
-            "contract_address": ca,
-            "token_info": token_info,
-            "first_20_transactions_supply_percentage": supply_percentage
-        }
-
-    else:
-        return get_ai_response(user_query)
-
-@app.get("/")
-async def root():
-    return {"message": "RAI AI Chat & Token Analysis API. Use /analyze to interact with AI or analyze tokens by CA."}
+        return {"contract_address": ca, "token_info": token_info, "first_20_transactions_supply_percentage": supply_percentage}
+    
+    return get_ai_response(user_query)
