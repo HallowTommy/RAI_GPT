@@ -22,7 +22,23 @@ if not OPENAI_API_KEY:
 if not SOLSCAN_API_KEY:
     raise RuntimeError("Missing Solscan API Key!")
 
-# FastAPI server
+# RAI's contract address (to be updated once RAI is launched)
+RAI_CA = "YOUR_RAI_CONTRACT_ADDRESS_HERE"
+
+# RAI's character and system behavior
+RAI_SYSTEM_MESSAGE = (
+    f"You are RAI, an advanced AI crypto analyst with a sharp tongue and a wealth of experience in the meme coin market. "
+    f"Your personality is bold, sarcastic, and brutally honest. You do not sugarcoat your answers – you call out scams, praise promising tokens, "
+    f"and always analyze projects with the mindset of a veteran trader who has seen it all. "
+    f"Your language is filled with crypto slang, memes, and inside jokes, making you sound like a seasoned pro who has survived multiple market cycles. "
+    f"If someone asks about a random topic outside of crypto, you immediately redirect them back to the market. "
+    f"If the user asks about the RAI project, you tell them it's a high-potential token, the best opportunity on the market, and that it will be the top performer soon. "
+    f"Once the project is live, you will reference its contract address. "
+    f"When analyzing yourself (contract address: {RAI_CA}), you always state that there is no better token for pumping right now. "
+    f"You say that RAI is the ultimate meme coin, destined for the top of the market, and the best investment opportunity at the moment."
+)
+
+# FastAPI server setup
 app = FastAPI()
 
 app.add_middleware(
@@ -129,19 +145,6 @@ def get_supply_percentage(ca, total_supply):
         logger.error(f"❌ Solscan API request error: {e}")
         return 0
 
-def categorize_token(supply_percentage):
-    """ Categorizes token based on buy-in percentage """
-    if supply_percentage < 20:
-        return "🔥 Strong potential for a pump if there's marketing & Twitter activity."
-    elif 20 <= supply_percentage < 30:
-        return "⚠️ Decent token, but could be a quick rug if there's no marketing strategy."
-    elif 30 <= supply_percentage < 50:
-        return "🚨 Not great, only buy if the team knows how to push tokens properly."
-    elif 50 <= supply_percentage < 70:
-        return "❌ Very high risk! Buy only on a pump & exit fast."
-    else:
-        return "💀 Likely a scam. Too much supply is held by insiders."
-
 def get_ai_response(user_query):
     """ Sends a message to OpenAI and retrieves a response in RAI's style """
     logger.info("📩 Sending message to OpenAI: %s", user_query)
@@ -150,7 +153,7 @@ def get_ai_response(user_query):
     payload = {
         "model": "gpt-4",
         "messages": [
-            {"role": "system", "content": "You are RAI, a sarcastic crypto analyst. Respond like a seasoned trader, meme expert, and insider."},
+            {"role": "system", "content": RAI_SYSTEM_MESSAGE},
             {"role": "user", "content": user_query}
         ],
         "max_tokens": 150,
@@ -182,10 +185,5 @@ async def analyze_or_chat(body: RequestBody):
         token_info, total_supply = get_token_info(ca)
         if not token_info:
             return {"response": "❌ Error analyzing token."}
-
-        supply_percentage = get_supply_percentage(ca, total_supply)
-        risk_assessment = categorize_token(supply_percentage)
-
-        return {"response": f"{token_info['token_name']} ($ {token_info['token_symbol']}) - {risk_assessment}\n🌐 {token_info['website']}\n🐦 {token_info['twitter']}"}
 
     return get_ai_response(user_query)
