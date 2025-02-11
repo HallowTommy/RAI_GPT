@@ -156,8 +156,7 @@ def get_ai_response(user_query):
             {"role": "system", "content": RAI_SYSTEM_MESSAGE},
             {"role": "user", "content": user_query}
         ],
-        "max_tokens": 150,
-        "temperature": 0.8
+        "temperature": 0.8 
     }
 
     try:
