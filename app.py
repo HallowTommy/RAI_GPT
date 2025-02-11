@@ -8,21 +8,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-# Логирование
+# Logging configuration
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# Загрузка переменных окружения
+# Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SOLSCAN_API_KEY = os.getenv("SOLSCAN_API_KEY")
 
 if not OPENAI_API_KEY:
-    raise RuntimeError("Не найден API-ключ OpenAI!")
+    raise RuntimeError("Missing OpenAI API Key!")
 if not SOLSCAN_API_KEY:
-    raise RuntimeError("Не найден API-ключ Solscan!")
+    raise RuntimeError("Missing Solscan API Key!")
 
-# FastAPI сервер
+# FastAPI server
 app = FastAPI()
 
 app.add_middleware(
@@ -39,7 +39,7 @@ class RequestBody(BaseModel):
 SOLANA_CA_PATTERN = r"\b[1-9A-HJ-NP-Za-km-z]{32,44}\b"
 
 def format_number(value):
-    """ Форматирует числа в удобочитаемый вид (K, M, B, T) """
+    """ Formats numbers into human-readable form (K, M, B, T) """
     if value >= 1_000_000_000_000:
         return f"{value / 1_000_000_000_000:.2f}T"
     elif value >= 1_000_000_000:
@@ -51,22 +51,22 @@ def format_number(value):
     return str(value)
 
 def format_timestamp(timestamp):
-    """ Преобразует Unix Timestamp в удобный формат времени UTC """
+    """ Converts Unix Timestamp to a readable UTC format """
     try:
         return datetime.datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S UTC")
     except:
         return "Unknown"
 
 def get_token_info(ca):
-    """ Получает информацию о токене """
-    logger.info(f"🔍 Запрашиваем информацию о токене: {ca}")
+    """ Fetches token information """
+    logger.info(f"🔍 Fetching token info: {ca}")
 
     url = f"https://pro-api.solscan.io/v2.0/token/meta?address={ca}"
     headers = {"accept": "application/json", "Content-Type": "application/json", "token": SOLSCAN_API_KEY}
 
     try:
         response = requests.get(url, headers=headers)
-        logger.info(f"🔄 Статус ответа (meta): {response.status_code}")
+        logger.info(f"🔄 Solscan response status (meta): {response.status_code}")
 
         if response.status_code == 200:
             data = response.json().get("data", {})
@@ -88,19 +88,19 @@ def get_token_info(ca):
                     "website": data.get("metadata", {}).get("website", ""),
                     "twitter": data.get("metadata", {}).get("twitter", "")
                 }
-                logger.info(f"✅ Информация о токене получена: {token_info}")
+                logger.info(f"✅ Token info retrieved: {token_info}")
                 return token_info, total_supply
 
-        logger.warning("⚠️ Нет информации о токене.")
+        logger.warning("⚠️ No token data found.")
         return None, 0
 
     except requests.RequestException as e:
-        logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
+        logger.error(f"❌ Solscan API request error: {e}")
         return None, 0
 
 def get_supply_percentage(ca, total_supply):
-    """ Считает процент суплая, купленного за первые 20 транзакций """
-    logger.info(f"🔍 Анализируем процент закупленного суплая за первые 20 транзакций: {ca}")
+    """ Calculates the percentage of supply bought in the first 20 transactions """
+    logger.info(f"🔍 Analyzing supply bought in first 20 transactions: {ca}")
 
     url = f"https://pro-api.solscan.io/v2.0/token/transfer?address={ca}&activity_type[]=ACTIVITY_SPL_TRANSFER&page=1&page_size=20&sort_by=block_time&sort_order=asc"
 
@@ -108,36 +108,36 @@ def get_supply_percentage(ca, total_supply):
 
     try:
         response = requests.get(url, headers=headers)
-        logger.info(f"🔄 Статус ответа Solscan: {response.status_code}")
+        logger.info(f"🔄 Solscan response status (transactions): {response.status_code}")
 
         if response.status_code != 200:
-            logger.error(f"❌ Ошибка Solscan API: {response.text}")
+            logger.error(f"❌ Solscan API error: {response.text}")
             return 0
 
         data = response.json().get("data", [])
         if not data:
-            logger.warning("⚠️ Нет данных о первых транзакциях.")
+            logger.warning("⚠️ No transaction data found.")
             return 0
 
         total_bought = sum(tx["amount"] for tx in data)
         supply_percentage = (total_bought / total_supply) * 100 if total_supply > 0 else 0
 
-        logger.info(f"✅ Закуплено {supply_percentage:.2f}% от общего суплая в первых 20 транзакциях")
+        logger.info(f"✅ {supply_percentage:.2f}% of total supply bought in first 20 transactions")
         return round(supply_percentage, 2)
 
     except requests.RequestException as e:
-        logger.error(f"❌ Ошибка при запросе к Solscan API: {e}")
+        logger.error(f"❌ Solscan API request error: {e}")
         return 0
 
 def get_ai_response(user_query):
-    """ Отправляет сообщение в OpenAI и получает ответ в стиле RAI """
-    logger.info("📩 Отправляем сообщение в OpenAI: %s", user_query)
+    """ Sends a message to OpenAI and retrieves a response in RAI's style """
+    logger.info("📩 Sending message to OpenAI: %s", user_query)
 
     headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
     payload = {
         "model": "gpt-4",
         "messages": [
-            {"role": "system", "content": "Ты RAI – крипто-аналитик с мемным стилем. Общайся как опытный трейдер."},
+            {"role": "system", "content": "You are RAI, a sarcastic crypto analyst. Respond like a seasoned trader, meme expert, and insider."},
             {"role": "user", "content": user_query}
         ],
         "max_tokens": 150,
@@ -148,19 +148,19 @@ def get_ai_response(user_query):
         response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
 
         if response.status_code != 200:
-            logger.error("Ошибка OpenAI API: %s", response.text)
-            return {"response": "❌ Ошибка OpenAI. Попробуйте позже."}
+            logger.error("OpenAI API error: %s", response.text)
+            return {"response": "❌ OpenAI error. Try again later."}
 
         response_data = response.json()
         return {"response": response_data["choices"][0]["message"]["content"].strip()}
 
     except Exception as e:
-        logger.error("Ошибка при запросе к OpenAI: %s", e)
-        return {"response": "❌ Ошибка сервера. Попробуйте позже."}
+        logger.error("Error contacting OpenAI: %s", e)
+        return {"response": "❌ Server error. Try again later."}
 
 @app.post("/analyze")
 async def analyze_or_chat(body: RequestBody):
-    """ Анализ токена или чат с RAI """
+    """ Handles token analysis or general chat with RAI """
     user_query = body.user_query.strip()
     match = re.search(SOLANA_CA_PATTERN, user_query)
 
@@ -168,9 +168,25 @@ async def analyze_or_chat(body: RequestBody):
         ca = match.group(0)
         token_info, total_supply = get_token_info(ca)
         if not token_info:
-            return {"response": "❌ Ошибка при анализе токена."}
+            return {"response": "❌ Error analyzing token."}
 
         supply_percentage = get_supply_percentage(ca, total_supply)
-        return get_ai_response(f"Анализ токена {token_info['token_name']}: {supply_percentage}% закуплено на старте.")
+
+        # Send token analysis data along with an AI comment
+        analysis_message = (
+            f"📊 **Token Analysis:** {token_info['token_name']} ($ {token_info['token_symbol']})\n"
+            f"💰 **Market Cap:** {token_info['market_cap']}\n"
+            f"🔄 **Total Supply:** {token_info['total_supply']}\n"
+            f"👥 **Holders:** {token_info['holders_count']}\n"
+            f"📅 **Created On:** {token_info['created_time']}\n"
+            f"🛠 **Creator:** {token_info['creator']}\n"
+            f"🔗 **First Mint TX:** {token_info['first_mint_tx']}\n"
+            f"📊 **First 20 TX Supply Bought:** {supply_percentage}%\n"
+            f"🌐 **Website:** {token_info['website']}\n"
+            f"🐦 **Twitter:** {token_info['twitter']}\n"
+        )
+
+        ai_comment = get_ai_response(f"Analyze token {token_info['token_name']}: {supply_percentage}% supply bought at launch.")
+        return {"response": analysis_message + "\n📢 **RAI Says:** " + ai_comment["response"]}
 
     return get_ai_response(user_query)
