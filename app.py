@@ -136,15 +136,21 @@ def get_supply_percentage(ca, total_supply):
             return 0
 
         total_bought = sum(tx["amount"] for tx in data)
-        supply_percentage = (total_bought / total_supply) * 100 if total_supply > 0 else 0
+
+        # ✅ ВАЛИДАЦИЯ ЗНАЧЕНИЯ
+        if total_bought > total_supply:
+            logger.warning(f"⚠️ Total bought ({total_bought}) exceeds total supply ({total_supply}). Capping at 100%.")
+            supply_percentage = 100.0  # Устанавливаем безопасное значение
+        else:
+            supply_percentage = (total_bought / total_supply) * 100 if total_supply > 0 else 0
 
         logger.info(f"✅ {supply_percentage:.2f}% of total supply bought in first 20 transactions")
         return round(supply_percentage, 2)
 
-    except requests.RequestException as e:
-        logger.error(f"❌ Solscan API request error: {e}")
+    except Exception as e:
+        logger.error(f"❌ Unexpected error in get_supply_percentage: {e}")
         return 0
-
+        
 @app.post("/analyze")
 async def analyze_or_chat(body: RequestBody):
     """ Handles token analysis or general chat with RAI """
