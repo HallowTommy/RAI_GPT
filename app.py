@@ -145,34 +145,6 @@ def get_supply_percentage(ca, total_supply):
         logger.error(f"❌ Solscan API request error: {e}")
         return 0
 
-def get_ai_response(user_query):
-    """ Sends a message to OpenAI and retrieves a response in RAI's style """
-    logger.info("📩 Sending message to OpenAI: %s", user_query)
-
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
-    payload = {
-        "model": "gpt-4",
-        "messages": [
-            {"role": "system", "content": RAI_SYSTEM_MESSAGE},
-            {"role": "user", "content": user_query}
-        ],
-        "temperature": 0.8 
-    }
-
-    try:
-        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-
-        if response.status_code != 200:
-            logger.error("OpenAI API error: %s", response.text)
-            return {"response": "❌ OpenAI error. Try again later."}
-
-        response_data = response.json()
-        return {"response": response_data["choices"][0]["message"]["content"].strip()}
-
-    except Exception as e:
-        logger.error("Error contacting OpenAI: %s", e)
-        return {"response": "❌ Server error. Try again later."}
-
 @app.post("/analyze")
 async def analyze_or_chat(body: RequestBody):
     """ Handles token analysis or general chat with RAI """
@@ -185,6 +157,14 @@ async def analyze_or_chat(body: RequestBody):
         if not token_info:
             return {"response": "❌ Error analyzing token."}
 
-        return get_ai_response(f"Analyze token: {token_info}")
+        supply_percentage = get_supply_percentage(ca, total_supply)
+
+        analysis_prompt = f"Token Name: {token_info['token_name']} ({token_info['token_symbol']})\n"
+        analysis_prompt += f"Market Cap: {token_info['market_cap']}\nTotal Supply: {token_info['total_supply']}\n"
+        analysis_prompt += f"Created: {token_info['created_time']}\nHolders: {token_info['holders_count']}\n"
+        analysis_prompt += f"Website: {token_info['website']}\nTwitter: {token_info['twitter']}\n"
+        analysis_prompt += f"Perform risk assessment based on these data points without revealing supply percentage."
+
+        return get_ai_response(analysis_prompt)
 
     return get_ai_response(user_query)
