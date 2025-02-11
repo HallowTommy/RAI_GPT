@@ -131,14 +131,14 @@ def get_supply_percentage(ca, total_supply):
 
 def categorize_token(supply_percentage):
     """ Categorizes token based on buy-in percentage """
-    if supply_percentage < 10:
+    if supply_percentage < 20:
         return "🔥 Strong potential for a pump if there's marketing & Twitter activity."
-    elif 10 <= supply_percentage < 20:
+    elif 20 <= supply_percentage < 30:
         return "⚠️ Decent token, but could be a quick rug if there's no marketing strategy."
-    elif 20 <= supply_percentage < 40:
-        return "🚨 High-risk token! Only worth investing if the team is strong & experienced."
-    elif 40 <= supply_percentage < 60:
-        return "❌ Very high-risk! Buy only on a pump & exit fast."
+    elif 30 <= supply_percentage < 50:
+        return "🚨 Not great, only buy if the team knows how to push tokens properly."
+    elif 50 <= supply_percentage < 70:
+        return "❌ Very high risk! Buy only on a pump & exit fast."
     else:
         return "💀 Likely a scam. Too much supply is held by insiders."
 
