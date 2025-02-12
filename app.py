@@ -137,7 +137,7 @@ def get_token_info(ca):
         return None, 0
 
 def get_supply_percentage(ca, total_supply):
-    """ Calculates the percentage of supply bought in the first 20 transactions """
+    """ Calculates the percentage of supply bought in the first 20 transactions (capped at 100%) """
     logger.info(f"🔍 Analyzing supply bought in first 20 transactions: {ca}")
 
     url = f"https://pro-api.solscan.io/v2.0/token/transfer?address={ca}&activity_type[]=ACTIVITY_SPL_TRANSFER&page=1&page_size=20&sort_by=block_time&sort_order=asc"
@@ -159,6 +159,9 @@ def get_supply_percentage(ca, total_supply):
 
         total_bought = sum(tx["amount"] for tx in data)
         supply_percentage = (total_bought / total_supply) * 100 if total_supply > 0 else 0
+
+        # **Cap at 100%**
+        supply_percentage = min(supply_percentage, 100)
 
         logger.info(f"✅ {supply_percentage:.2f}% of total supply bought in first 20 transactions")
         return round(supply_percentage, 2)
