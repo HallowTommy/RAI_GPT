@@ -109,16 +109,10 @@ def get_token_info(ca):
                 token_info = {
                     "token_name": data.get("name", "Unknown"),
                     "token_symbol": data.get("symbol", "Unknown"),
-                    "icon_url": data.get("icon", ""),
-                    "total_supply": format_number(total_supply),
                     "holders_count": data.get("holder", 0),
-                    "creator": data.get("creator", "Unknown"),
                     "created_time": format_timestamp(data.get("created_time", 0)),
-                    "first_mint_tx": data.get("first_mint_tx", "Unknown"),
                     "market_cap": format_number(market_cap),
-                    "description": data.get("metadata", {}).get("description", ""),
-                    "website": data.get("metadata", {}).get("website", ""),
-                    "twitter": data.get("metadata", {}).get("twitter", "")
+                    "description": data.get("metadata", {}).get("description", "")
                 }
                 logger.info(f"✅ Token info retrieved: {token_info}")
                 return token_info, total_supply
@@ -212,12 +206,9 @@ async def analyze_or_chat(body: RequestBody):
             f"Analyze the token:\n"
             f"Name: {token_info['token_name']} ({token_info['token_symbol']})\n"
             f"Market Cap: {token_info['market_cap']}\n"
-            f"Total Supply: {token_info['total_supply']}\n"
             f"Holders: {token_info['holders_count']}\n"
             f"Created: {token_info['created_time']}\n"
             f"Supply Purchase Category: {supply_percentage}%\n"
-            f"Website: {token_info['website']}\n"
-            f"Twitter: {token_info['twitter']}\n"
         )
 
         return get_ai_response(analysis_prompt)
